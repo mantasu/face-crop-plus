@@ -1,0 +1,9 @@
+# Temp
+img_celeba
+landmark.txt
+
+build
+weights
+__pycache__
+*.jpg
+face_cropper_plus.egg-info
