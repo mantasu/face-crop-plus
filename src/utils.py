@@ -1,9 +1,22 @@
+import cv2
 import json
+import torch
 import numpy as np
 
 
-def parse_landmarks_file(file_path: str, **kwargs,
-                         ) -> tuple[np.ndarray, np.ndarray]:
+STANDARD_LANDMARKS_5 = np.float32([
+    [0.31556875000000000, 0.4615741071428571],
+    [0.68262291666666670, 0.4615741071428571],
+    [0.50026249999999990, 0.6405053571428571],
+    [0.34947187500000004, 0.8246919642857142],
+    [0.65343645833333330, 0.8246919642857142],
+])
+
+
+def parse_landmarks_file(
+    file_path: str,
+    **kwargs,
+) -> tuple[np.ndarray, np.ndarray]:
     if file_path.endswith(".json"):
         with open(file_path, 'r') as f:
             # Read and parse
@@ -22,65 +35,99 @@ def parse_landmarks_file(file_path: str, **kwargs,
     
     return filenames, landmarks.reshape(len(landmarks), -1, 2)
 
-def get_landmark_indices(num_landmarks: int) -> dict:
-    landmark_indices = {}
-
+def get_landmark_indices_5(num_landmarks: int) -> dict[str, int | slice]:
     match num_landmarks:
         case 5:
-            landmark_indices = {
-                "nose_tip": 2,
-                "left_eye": slice(0, 1),
-                "right_eye": slice(1, 2)
-            }
-        case 24:
-            landmark_indices = {
-                "nose_tip": 11,
-                "left_eye": slice(3, 5),
-                "right_eye": slice(5, 7)
-            }
-        case 30:
-            landmark_indices = {
-                "nose_tip": 14,
-                "left_eye": slice(4, 6),
-                "right_eye": slice(6, 8)
-            }
-        case 39:
-            landmark_indices = {
-                "nose_tip": 30,
-                "left_eye": slice(36, 42),
-                "right_eye": slice(42, 48)
-            }
-        case 48:
-            landmark_indices = {
-                "nose_tip": 28,
-                "left_eye": slice(22, 27),
-                "right_eye": slice(27, 32)
-            }
-        case 60:
-            landmark_indices = {
-                "nose_tip": 28,
-                "left_eye": slice(22, 27),
-                "right_eye": slice(27, 32)
-            }
+            indices = [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5)]
+        case 12:
+            indices = [(10, 11), (11, 12), (2, 3), (3, 4), (4, 5)]
+        case 17:
+            indices = [(2, 5), (7, 10), (10, 11), (13, 14), (16, 17)]
+        case 21:
+            indices = [(6, 9), (9, 12), (14, 15), (17, 18), (19, 20)]
+        case 29:
+            indices = [(4, 9), (13, 18), (19, 20), (22, 23), (27, 28)]
+        case 49: # same as 51
+            indices = [(19, 25), (25, 31), (13, 14), (31, 32), (37, 38)]
         case 68:
-            landmark_indices = {
-                "nose_tip": 30,
-                "left_eye": slice(36, 42),
-                "right_eye": slice(42, 48)
-            }
+            indices = [(36, 42), (42, 48), (30, 31), (48, 49), (54, 55)]
+        case 98:
+            indices = [(60, 68), (68, 76), (54, 55), (76, 77), (82, 83)]
         case 106:
-            landmark_indices = {
-                "nose_tip": 55,
-                "left_eye": slice(60, 68),
-                "right_eye": slice(68, 76)
-            }
-        case 194:
-            landmark_indices = {
-                "nose_tip": 33,
-                "left_eye": slice(37, 46),
-                "right_eye": slice(46, 55)
-            }
+            indices = [(66, 75), (75, 84), (54, 55), (85, 86), (91, 92)]
         case _:
-            raise ValueError(f"Unsupported number of landmarks: {num_landmarks}")
+            raise ValueError(f"Invalid number of landmarks: {num_landmarks}")
 
-    return landmark_indices
+    return [slice(*x) for x in indices]
+
+
+def create_batch_from_img_path_list(
+    path_list: list[str],
+    padding_mode: str = "constant",
+    size: int | tuple[int, int] = 512,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Creates image batch from a list of image paths
+
+    For every image path in the given list, the image is read, resized
+    to not exceed either of the dimensions specified in `size` while
+    keeping the same aspect ratio and the shorter dimension is padded to
+    fully match the specified size. All the images are stacked and
+    returned as a batch. Variables required to transform the images back
+    to the original ones (padding and scale) are also returned as a
+    batch.
+
+    Example:
+        If some loaded image dimension is (1280×720) and the desired
+        output `size` is specified as `(512, 256)`, then the image is
+        first be resized to (455, 256) and then the width is padded from
+        both sides. The final image size is (512, 256).
+
+    Args:
+        path_list: The list of paths to images.
+        padding_mode: The type of padding to apply to pad the shorter
+            dimension. For the available options, see <https://docs.opencv.org/3.4/d2/de8/group__core__array.html#ga209f2f4869e304c82d07739337eae7c5>.
+            It can be all lowercase. Defaults to "constant".
+        size: The width and the height each image should be resized +
+            padded to. I.e., the spacial dimensions of the batch. If
+            a single number is specified then it is the same for width
+            height. Defaults to 512.
+
+    Returns:
+        tuple: A tuple of stacked torch tensors representing 3 batches - 
+            a resized + padded images, unscale factor, applied padding.
+    """
+    # Init lists, resize dims, border type
+    images, unscales, paddings = [], [], []
+    size = (size, size) if isinstance(size, int) else size
+    border_type = getattr(cv2, f"BORDER_{padding_mode.upper()}")
+
+    for path in path_list:
+        # Read the image from the given path, convert to RGB form
+        image = cv2.cvtColor(cv2.imread(path), cv2.COLOR_BGR2RGB)
+    
+        # Get width, height, padding & check interpolation
+        (h, w), m = image.shape[:2], max(*image.shape[:2])
+        interpolation = cv2.INTER_AREA if m > max(size) else cv2.INTER_CUBIC
+
+        if (ratio_w := size[0] / w) < (ratio_h := size[1] / h):
+            # Based on width 
+            unscale = ratio_w
+            size_new = (size[0], h * ratio_w)
+            padding = [(size[1] - h) // 2, (size[1] - h + 1) // 2, 0, 0]
+        else:
+            # Based on height
+            unscale = ratio_h
+            size_new = (w * ratio_h, size[1])
+            padding = [0, 0, (size[0] - w) // 2, (size[0] - w + 1) // 2]
+    
+        # Pad the lower dimension with specific border type, then resize
+        image = cv2.resize(image, size_new, interpolation=interpolation)
+        image = cv2.copyMakeBorder(image, *padding, borderType=border_type)
+
+        # Add images, unscale, padding to lists
+        images.append(torch.from_numpy(image))
+        unscales.append(torch.tensor(unscale))
+        paddings.append(torch.tensor(padding))
+        
+
+    return torch.stack(images), torch.stack(unscales), torch.stack(paddings)

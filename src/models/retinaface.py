@@ -312,35 +312,39 @@ class LandmarkHead(nn.Module):
 
 
 class RetinaFace(nn.Module):
-    def __init__(self, backbone_name):
-        """
-        :param cfg:  Network related settings.
-        :param phase: train or test.
-        """
-        super(RetinaFace,self).__init__()
-        # self.phase = phase
+    def __init__(self,
+        backbone_name: str = "resnet50",
+        size: int | tuple[int, int] = 512,
+        vis_threshold: float = 0.6,
+        nms_threshold: float = 0.4,
+        strategy: str = "largest",
+        variance: list[int] = [0.1, 0.2],
+        padding_mode: str = "constant",
+    ):
+        super().__init__()
+        self.size = size
+        self.vis_threshold = vis_threshold
+        self.nms_threshold = nms_threshold
+        self.strategy = strategy
+        self.variance = variance
+        self.padding_mode = padding_mode
+
         backbone = None
-        if backbone_name == "mobile0.25":
+
+        if backbone_name == "mobilenet0.25":
             backbone = MobileNetV1()
-            return_layers = {'stage1': 1, 'stage2': 2, 'stage3': 3} # cfg['return_layers']
+            return_layers = {'stage1': 1, 'stage2': 2, 'stage3': 3}
             in_channels = 32
             out_channels = 64
             weights_path = "weights/retinaface-pytorch-mobilenet0.25.pth"
-            # if cfg['pretrain']:
-            #     checkpoint = torch.load("./weights/mobilenetV1X0.25_pretrain.tar", map_location=torch.device('cpu'))
-            #     from collections import OrderedDict
-            #     new_state_dict = OrderedDict()
-            #     for k, v in checkpoint['state_dict'].items():
-            #         name = k[7:]  # remove module.
-            #         new_state_dict[name] = v
-            #     # load params
-            #     backbone.load_state_dict(new_state_dict)
+
         elif backbone_name == "resnet50":
-            backbone = models.resnet50()# pretrained=cfg['pretrain'])
-            return_layers = {'layer2': 1, 'layer3': 2, 'layer4': 3} # cfg['return_layers']
+            backbone = models.resnet50()
+            return_layers = {'layer2': 1, 'layer3': 2, 'layer4': 3}
             in_channels = 256
             out_channels = 256
-            weights_path = "weights/retinaface-pytorch-resnet50.pth"
+            # weights_path = "weights/retinaface-pytorch-resnet50.pth"
+            weights_path = "weights/RetinaFace-R50.pth"
 
         self.body = _utils.IntermediateLayerGetter(backbone, return_layers)
 
@@ -359,7 +363,25 @@ class RetinaFace(nn.Module):
         self.BboxHead = self._make_bbox_head(fpn_num=3, inchannels=out_channels)
         self.LandmarkHead = self._make_landmark_head(fpn_num=3, inchannels=out_channels)
 
-        self.load_state_dict(torch.load(weights_path))
+        # self.load_state_dict(torch.load(weights_path))
+        self.load(weights_path)
+    
+    def remove_prefix(self, state_dict, prefix):
+        ''' Old style model is stored with all names of parameters sharing common prefix 'module.' '''
+        f = lambda x: x.split(prefix, 1)[-1] if x.startswith(prefix) else x
+        return {f(key): value for key, value in state_dict.items()}
+
+    def load(self, weights_path, load_to_cpu=False):
+        if load_to_cpu:
+            pretrained_dict = torch.load(weights_path, map_location=lambda storage, loc: storage)
+        else:
+            pretrained_dict = torch.load(weights_path, map_location=lambda storage, loc: storage.cuda())
+        if "state_dict" in pretrained_dict.keys():
+            pretrained_dict = self.remove_prefix(pretrained_dict['state_dict'], 'module.')
+        else:
+            pretrained_dict = self.remove_prefix(pretrained_dict, 'module.')
+        
+        self.load_state_dict(pretrained_dict, strict=False)
 
     def _make_class_head(self,fpn_num=3,inchannels=64,anchor_num=2):
         classhead = nn.ModuleList()
@@ -406,19 +428,13 @@ class RetinaFace(nn.Module):
     def predict(
         self,
         images: list[np.ndarray],
-        padding: str = "constant",
-        size: int = 512,
-        vis_threshold: float = 0.6,
-        nms_threshold: float = 0.4,
-        strategy: str = "largest",
-        variance: list[int] = [0.1, 0.2],
         device: str | torch.device = "cpu",
     ):
         # x = torch.stack([prep_img(image, padding, size) for image in images])
         x, transform_back = [], []
 
         for image in images:
-            img, t = prep_img(image, padding, size)
+            img, t = prep_img(image, self.padding_mode, self.size)
             x.append(img)
             transform_back.append(t)
 
@@ -432,15 +448,15 @@ class RetinaFace(nn.Module):
         scale_l = torch.Tensor([x.size(3), x.size(2)] * 5, device=device)
 
         scores = conf[..., 1:2]
-        boxes = decode(loc, priors, variance) * scale_b
-        landms = decode_landm(landms, priors, variance) * scale_l
+        boxes = decode(loc, priors, self.variance) * scale_b
+        landms = decode_landm(landms, priors, self.variance) * scale_l
 
         indices, landmarks = [], []
 
         for i in range(len(images)):
-            inds = torch.where(scores[i] > vis_threshold)[0]
+            inds = torch.where(scores[i] > self.vis_threshold)[0]
             bbs, lms, scs = boxes[i][inds], landms[i][inds], scores[i][inds]
-            keep = py_cpu_nms(torch.hstack((bbs, scs)), nms_threshold)
+            keep = py_cpu_nms(torch.hstack((bbs, scs)), self.nms_threshold)
 
             lms = lms[keep, :]
             
@@ -451,15 +467,15 @@ class RetinaFace(nn.Module):
             if len(keep) == 0:
                 continue
 
-            if strategy == "largest":
+            if self.strategy == "largest":
                 bbs = bbs[keep, :]
                 idx = torch.argmax((bbs[:, 2] * bbs[:, 3]).squeeze())
                 indices.append(i)
-                landmarks.append(lms[idx].cpu().numpy())
-            elif strategy == "all":
+                landmarks.append(lms[idx].reshape(-1, 2))
+            elif self.strategy == "all":
                 indices.extend([i] * len(keep))
-                landmarks.extend([*lms.cpu().numpy()])
+                landmarks.extend([*lms.reshape(len(lms), -1, 2)])
             else:
-                raise ValueError(f"Unsupported strategy: '{strategy}'.")
+                raise ValueError(f"Unsupported strategy: '{self.strategy}'.")
         
-        return landmarks, indices, torch.stack([prep_img(image, padding, size, offset=(0, 0, 0))[0] for image in images]).numpy().astype(np.uint8)
+        return torch.stack(landmarks), indices
