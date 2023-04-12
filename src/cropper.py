@@ -74,6 +74,7 @@ class Cropper():
                 size=self.det_resize_size,
                 vis_threshold=self.det_threshold,
                 strategy=self.strategy,
+                device=self.device,
             ).to(self.device).eval()
         else:
             raise ValueError(f"Unsupported model: {self.det_model_name}.")
@@ -171,18 +172,25 @@ class Cropper():
         return x
 
     def process_batch(self, file_batch: list[str], input_dir: str, output_dir: str):
-        # batch = [cv2.imread(os.path.join(input_dir, f), cv2.IMREAD_COLOR) for f in file_batch]
+        batch_np = [cv2.imread(os.path.join(input_dir, f), cv2.IMREAD_COLOR) for f in file_batch]
 
         file_paths = [os.path.join(input_dir, file) for file in file_batch]
-        batch, unscales, paddings = create_batch_from_img_path_list(file_paths)
+        batch, sc, pad = create_batch_from_img_path_list(file_paths, size=self.det_resize_size)
 
         if self.landmarks is None:
             # If landmarks were not given, predict them
-            landmarks, indices = self.det_model.predict(batch, self.device)
-            landmarks = landmarks.cpu().numpy()
+            # landmarks, indices = self.det_model.predict(batch, self.device)
+            # landmarks = landmarks.cpu().numpy()
 
-            preds = self.det_model.predict(batch, unscales, paddings)
-            landmarks, indices = landmarks.cpu().numpy()
+            landmarks, indices = self.det_model.predict(batch)
+ 
+            pad = pad[indices][..., None]
+            sc = sc[indices][:, None, None]
+
+            landmarks[..., ::2] = (landmarks[..., ::2] - pad[:, 2:3]) / sc
+            landmarks[..., 1::2] = (landmarks[..., 1::2] - pad[:, 0:1]) / sc
+
+            landmarks = landmarks.numpy()
         else:
             # Generate indices for landmarks to take, then get landmarks
             indices = np.where(np.isin(self.landmarks[0], file_batch))[0]
@@ -190,7 +198,7 @@ class Cropper():
 
         # Generate source, target landmarks, estimate & apply transform
         src, tgt = self.generate_source_and_target_landmarks(landmarks)
-        batch_aligned = self.estimated_align(batch, indices, src, tgt)
+        batch_aligned = self.estimated_align(batch_np, indices, src, tgt)
         batch_enhanced = self.enhance_quality(batch_aligned)
         
         # Update to include only images with existing landmarks
@@ -231,5 +239,5 @@ class Cropper():
 
 
 if __name__ == "__main__":
-    cropper = Cropper(strategy="all", det_backbone="resnet50", sr_scale=1)
+    cropper = Cropper(strategy="largest", det_backbone="resnet50", sr_scale=1, det_resize_size=1024)
     cropper.process_dir("ddemo2")

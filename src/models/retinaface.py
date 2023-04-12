@@ -10,36 +10,39 @@ import torchvision.models._utils as _utils
 from math import ceil
 from itertools import product
 
-def prep_img(
-    image: np.ndarray,
-    padding_mode: str = "constant",
-    size: int = 512,
-    offset: tuple[int] = (-104, -117, -123),
-    as_rgb: bool = False,
-) -> tuple[torch.Tensor, torch.Tensor]:
-    padding_modes = {
-        "reflect": cv2.BORDER_REFLECT,
-        "replicate": cv2.BORDER_REPLICATE,
-        "constant": cv2.BORDER_CONSTANT,
-        "reflect_101": cv2.BORDER_REFLECT_101
-    }
-    if isinstance(size, int):
-        size = (size, size)
+import sys
+sys.path.append("src")
+
+# def prep_img(
+#     image: np.ndarray,
+#     padding_mode: str = "constant",
+#     size: int = 512,
+#     offset: tuple[int] = (-104, -117, -123),
+#     as_rgb: bool = False,
+# ) -> tuple[torch.Tensor, torch.Tensor]:
+#     padding_modes = {
+#         "reflect": cv2.BORDER_REFLECT,
+#         "replicate": cv2.BORDER_REPLICATE,
+#         "constant": cv2.BORDER_CONSTANT,
+#         "reflect_101": cv2.BORDER_REFLECT_101
+#     }
+#     if isinstance(size, int):
+#         size = (size, size)
     
-    (h, w), m = image.shape[:2], max(*image.shape[:2])
-    interpolation = cv2.INTER_AREA if m > max(size) else cv2.INTER_CUBIC
+#     (h, w), m = image.shape[:2], max(*image.shape[:2])
+#     interpolation = cv2.INTER_AREA if m > max(size) else cv2.INTER_CUBIC
 
-    padding = (m - h) // 2, (m - h + 1) // 2, (m - w) // 2, (m - w + 1) // 2
-    image = cv2.copyMakeBorder(image, *padding, padding_modes[padding_mode])
-    image = cv2.resize(image, size, interpolation=interpolation)
-    image = image + offset
+#     padding = (m - h) // 2, (m - h + 1) // 2, (m - w) // 2, (m - w + 1) // 2
+#     image = cv2.copyMakeBorder(image, *padding, padding_modes[padding_mode])
+#     image = cv2.resize(image, size, interpolation=interpolation)
+#     image = image + offset
 
-    transform_back = [m / size[0], m / size[1], padding[2], padding[0]]
+#     transform_back = [m / size[0], m / size[1], padding[2], padding[0]]
 
-    if as_rgb:
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+#     if as_rgb:
+#         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-    return torch.from_numpy(image).float(), torch.tensor(transform_back)
+#     return torch.from_numpy(image).float(), torch.tensor(transform_back)
 
 def py_cpu_nms(dets: torch.Tensor, thresh):
     """Pure Python NMS baseline."""
@@ -71,44 +74,44 @@ def py_cpu_nms(dets: torch.Tensor, thresh):
 
     return keep
 
-def decode(loc, priors, variances):
-    """Decode locations from predictions using priors to undo
-    the encoding we did for offset regression at train time.
-    Args:
-        loc (tensor): location predictions for loc layers,
-            Shape: [num_priors,4]
-        priors (tensor): Prior boxes in center-offset form.
-            Shape: [num_priors,4].
-        variances: (list[float]) Variances of priorboxes
-    Return:
-        decoded bounding box predictions
-    """
-    boxes = torch.cat((
-        priors[:, :2] + loc[..., :2] * variances[0] * priors[:, 2:],
-        priors[:, 2:] * torch.exp(loc[..., 2:] * variances[1])), 2)
-    boxes[..., :2] -= boxes[..., 2:] / 2
-    boxes[..., 2:] += boxes[..., :2]
-    return boxes
+# def decode(loc, priors, variances):
+#     """Decode locations from predictions using priors to undo
+#     the encoding we did for offset regression at train time.
+#     Args:
+#         loc (tensor): location predictions for loc layers,
+#             Shape: [num_priors,4]
+#         priors (tensor): Prior boxes in center-offset form.
+#             Shape: [num_priors,4].
+#         variances: (list[float]) Variances of priorboxes
+#     Return:
+#         decoded bounding box predictions
+#     """
+#     boxes = torch.cat((
+#         priors[:, :2] + loc[..., :2] * variances[0] * priors[:, 2:],
+#         priors[:, 2:] * torch.exp(loc[..., 2:] * variances[1])), 2)
+#     boxes[..., :2] -= boxes[..., 2:] / 2
+#     boxes[..., 2:] += boxes[..., :2]
+#     return boxes
 
-def decode_landm(pre, priors, variances):
-    """Decode landm from predictions using priors to undo
-    the encoding we did for offset regression at train time.
-    Args:
-        pre (tensor): landm predictions for loc layers,
-            Shape: [num_priors,10]
-        priors (tensor): Prior boxes in center-offset form.
-            Shape: [num_priors,4].
-        variances: (list[float]) Variances of priorboxes
-    Return:
-        decoded landm predictions
-    """
-    landms = torch.cat((priors[..., :2] + pre[..., :2] * variances[0] * priors[..., 2:],
-                        priors[..., :2] + pre[..., 2:4] * variances[0] * priors[..., 2:],
-                        priors[..., :2] + pre[..., 4:6] * variances[0] * priors[..., 2:],
-                        priors[..., :2] + pre[..., 6:8] * variances[0] * priors[..., 2:],
-                        priors[..., :2] + pre[..., 8:10] * variances[0] * priors[..., 2:],
-                        ), dim=2)
-    return landms
+# def decode_landm(pre, priors, variances):
+#     """Decode landm from predictions using priors to undo
+#     the encoding we did for offset regression at train time.
+#     Args:
+#         pre (tensor): landm predictions for loc layers,
+#             Shape: [num_priors,10]
+#         priors (tensor): Prior boxes in center-offset form.
+#             Shape: [num_priors,4].
+#         variances: (list[float]) Variances of priorboxes
+#     Return:
+#         decoded landm predictions
+#     """
+#     landms = torch.cat((priors[..., :2] + pre[..., :2] * variances[0] * priors[..., 2:],
+#                         priors[..., :2] + pre[..., 2:4] * variances[0] * priors[..., 2:],
+#                         priors[..., :2] + pre[..., 4:6] * variances[0] * priors[..., 2:],
+#                         priors[..., :2] + pre[..., 6:8] * variances[0] * priors[..., 2:],
+#                         priors[..., :2] + pre[..., 8:10] * variances[0] * priors[..., 2:],
+#                         ), dim=2)
+#     return landms
 
 def conv_bn(inp, oup, stride = 1, leaky = 0):
     return nn.Sequential(
@@ -237,48 +240,48 @@ class FPN(nn.Module):
         return out
 
 
-class MobileNetV1(nn.Module):
-    def __init__(self):
-        super(MobileNetV1, self).__init__()
-        self.stage1 = nn.Sequential(
-            conv_bn(3, 8, 2, leaky = 0.1),    # 3
-            conv_dw(8, 16, 1),   # 7
-            conv_dw(16, 32, 2),  # 11
-            conv_dw(32, 32, 1),  # 19
-            conv_dw(32, 64, 2),  # 27
-            conv_dw(64, 64, 1),  # 43
-        )
-        self.stage2 = nn.Sequential(
-            conv_dw(64, 128, 2),  # 43 + 16 = 59
-            conv_dw(128, 128, 1), # 59 + 32 = 91
-            conv_dw(128, 128, 1), # 91 + 32 = 123
-            conv_dw(128, 128, 1), # 123 + 32 = 155
-            conv_dw(128, 128, 1), # 155 + 32 = 187
-            conv_dw(128, 128, 1), # 187 + 32 = 219
-        )
-        self.stage3 = nn.Sequential(
-            conv_dw(128, 256, 2), # 219 +3 2 = 241
-            conv_dw(256, 256, 1), # 241 + 64 = 301
-        )
-        self.avg = nn.AdaptiveAvgPool2d((1,1))
-        self.fc = nn.Linear(256, 1000)
+# class MobileNetV1(nn.Module):
+#     def __init__(self):
+#         super(MobileNetV1, self).__init__()
+#         self.stage1 = nn.Sequential(
+#             conv_bn(3, 8, 2, leaky = 0.1),    # 3
+#             conv_dw(8, 16, 1),   # 7
+#             conv_dw(16, 32, 2),  # 11
+#             conv_dw(32, 32, 1),  # 19
+#             conv_dw(32, 64, 2),  # 27
+#             conv_dw(64, 64, 1),  # 43
+#         )
+#         self.stage2 = nn.Sequential(
+#             conv_dw(64, 128, 2),  # 43 + 16 = 59
+#             conv_dw(128, 128, 1), # 59 + 32 = 91
+#             conv_dw(128, 128, 1), # 91 + 32 = 123
+#             conv_dw(128, 128, 1), # 123 + 32 = 155
+#             conv_dw(128, 128, 1), # 155 + 32 = 187
+#             conv_dw(128, 128, 1), # 187 + 32 = 219
+#         )
+#         self.stage3 = nn.Sequential(
+#             conv_dw(128, 256, 2), # 219 +3 2 = 241
+#             conv_dw(256, 256, 1), # 241 + 64 = 301
+#         )
+#         self.avg = nn.AdaptiveAvgPool2d((1,1))
+#         self.fc = nn.Linear(256, 1000)
 
-    def forward(self, x):
-        x = self.stage1(x)
-        x = self.stage2(x)
-        x = self.stage3(x)
-        x = self.avg(x)
-        # x = self.model(x)
-        x = x.view(-1, 256)
-        x = self.fc(x)
-        return x
+#     def forward(self, x):
+#         x = self.stage1(x)
+#         x = self.stage2(x)
+#         x = self.stage3(x)
+#         x = self.avg(x)
+#         # x = self.model(x)
+#         x = x.view(-1, 256)
+#         x = self.fc(x)
+#         return x
 
 
 class ClassHead(nn.Module):
     def __init__(self,inchannels=512,num_anchors=3):
         super(ClassHead,self).__init__()
         self.num_anchors = num_anchors
-        self.conv1x1 = nn.Conv2d(inchannels,self.num_anchors*2,kernel_size=(1,1),stride=1,padding=0)
+        self.conv1x1 = nn.Conv2d(inchannels,self.num_anchors*2,kernel_size=1)
 
     def forward(self,x):
         out = self.conv1x1(x)
@@ -290,7 +293,7 @@ class ClassHead(nn.Module):
 class BboxHead(nn.Module):
     def __init__(self,inchannels=512,num_anchors=3):
         super(BboxHead,self).__init__()
-        self.conv1x1 = nn.Conv2d(inchannels,num_anchors*4,kernel_size=(1,1),stride=1,padding=0)
+        self.conv1x1 = nn.Conv2d(inchannels,num_anchors*4,kernel_size=1)
 
     def forward(self,x):
         out = self.conv1x1(x)
@@ -302,7 +305,7 @@ class BboxHead(nn.Module):
 class LandmarkHead(nn.Module):
     def __init__(self,inchannels=512,num_anchors=3):
         super(LandmarkHead,self).__init__()
-        self.conv1x1 = nn.Conv2d(inchannels,num_anchors*10,kernel_size=(1,1),stride=1,padding=0)
+        self.conv1x1 = nn.Conv2d(inchannels,num_anchors*10,kernel_size=1)
 
     def forward(self,x):
         out = self.conv1x1(x)
@@ -312,7 +315,8 @@ class LandmarkHead(nn.Module):
 
 
 class RetinaFace(nn.Module):
-    def __init__(self,
+    def __init__(
+        self,
         backbone_name: str = "resnet50",
         size: int | tuple[int, int] = 512,
         vis_threshold: float = 0.6,
@@ -320,6 +324,7 @@ class RetinaFace(nn.Module):
         strategy: str = "largest",
         variance: list[int] = [0.1, 0.2],
         padding_mode: str = "constant",
+        device: str | torch.device = "cpu",
     ):
         super().__init__()
         self.size = size
@@ -328,17 +333,18 @@ class RetinaFace(nn.Module):
         self.strategy = strategy
         self.variance = variance
         self.padding_mode = padding_mode
+        self.device = device
 
         backbone = None
 
-        if backbone_name == "mobilenet0.25":
-            backbone = MobileNetV1()
-            return_layers = {'stage1': 1, 'stage2': 2, 'stage3': 3}
-            in_channels = 32
-            out_channels = 64
-            weights_path = "weights/retinaface-pytorch-mobilenet0.25.pth"
+        # if backbone_name == "mobilenet0.25":
+        #     backbone = MobileNetV1()
+        #     return_layers = {'stage1': 1, 'stage2': 2, 'stage3': 3}
+        #     in_channels = 32
+        #     out_channels = 64
+        #     weights_path = "weights/retinaface-pytorch-mobilenet0.25.pth"
 
-        elif backbone_name == "resnet50":
+        if backbone_name == "resnet50":
             backbone = models.resnet50()
             return_layers = {'layer2': 1, 'layer3': 2, 'layer4': 3}
             in_channels = 256
@@ -424,58 +430,293 @@ class RetinaFace(nn.Module):
         
         return output
     
-    @torch.no_grad()
-    def predict(
+    def decode_bboxes(self, loc, priors):
+        """Decode locations from predictions using priors to undo
+        the encoding we did for offset regression at train time.
+        Args:
+            loc (tensor): location predictions for loc layers,
+                Shape: [num_priors,4]
+            priors (tensor): Prior boxes in center-offset form.
+                Shape: [num_priors,4].
+            variances: (list[float]) Variances of priorboxes
+        Return:
+            decoded bounding box predictions
+        """
+        boxes = torch.cat((
+            priors[:, :2] + loc[..., :2] * self.variance[0] * priors[:, 2:],
+            priors[:, 2:] * torch.exp(loc[..., 2:] * self.variance[1])), 2)
+        boxes[..., :2] -= boxes[..., 2:] / 2
+        boxes[..., 2:] += boxes[..., :2]
+        return boxes
+
+    def decode_landms(self, pre, priors):
+        """Decode landm from predictions using priors to undo
+        the encoding we did for offset regression at train time.
+        Args:
+            pre (tensor): landm predictions for loc layers,
+                Shape: [num_priors,10]
+            priors (tensor): Prior boxes in center-offset form.
+                Shape: [num_priors,4].
+            variances: (list[float]) Variances of priorboxes
+        Return:
+            decoded landm predictions
+        """
+        landms = torch.cat((priors[..., :2] + pre[..., :2] * self.variance[0] * priors[..., 2:],
+                            priors[..., :2] + pre[..., 2:4] * self.variance[0] * priors[..., 2:],
+                            priors[..., :2] + pre[..., 4:6] * self.variance[0] * priors[..., 2:],
+                            priors[..., :2] + pre[..., 6:8] * self.variance[0] * priors[..., 2:],
+                            priors[..., :2] + pre[..., 8:10] * self.variance[0] * priors[..., 2:],
+                            ), dim=2)
+        return landms
+    
+    def parse_landmarks(
         self,
-        images: list[np.ndarray],
-        device: str | torch.device = "cpu",
-    ):
-        # x = torch.stack([prep_img(image, padding, size) for image in images])
-        x, transform_back = [], []
+        scores: torch.Tensor,
+        bboxes: torch.Tensor,
+        landms: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor, list[int]]:
+        """Parses predictions for identified faces for each sample
+        
+        This method works as follows:
+            1. First, it filters out bad predictions based on
+               `self.vis_threshold`.
+            2. Then it gathers all the remaining predictions across the
+               batch dimension, i.e., the batch dimension becomes not
+               the number of samples but the number of filtered out
+               predictions.
+            3. It loops for each set of filtered predictions per sample
+               sorting each set of confidence scores from best to worst.
+            4. For each set of confidence scores, it identifies distinct 
+               faces and keeps the record of which indices to keep. At 
+               this stage it uses `self.nms_threshold` to remove the 
+               duplicate face predictions.
+            5. Finally, it applies the kept indices for each person
+               (each face) to select corresponding bounding boxes and
+               landmarks.
 
-        for image in images:
-            img, t = prep_img(image, self.padding_mode, self.size)
-            x.append(img)
-            transform_back.append(t)
+        Note:
+            N corresponds to batch size and `out_dim` corresponds to
+            the total guesses that the model made about each sample.
+            Within those guesses, there typically exists at least 1
+            face but can be more. By default, it should be 43,008.
 
-        x = torch.stack(x)
+        Args:
+            scores: The confidence score predictions of shape
+                (N, out_dim).
+            bboxes: The bounding boxes for each face of shape
+                (N, out_dim, 4) where the last 4 numbers correspond to
+                start and end coordinates - x1, y1, x2, y2.
+            landms: The landmarks for each face of shape
+                (N, out_dim, num_landmarks * 2) where the last dim 
+                corresponds to landmark coordinates x1, y1, ... . By
+                default, num_landmarks is 5.
 
-        x = x.permute(0, 3, 1, 2).to(device)
-        loc, conf, landms = self.to(device)(x)
+        Returns:
+            A tuple where the first element is a torch tensor of shape
+            (num_faces, 4), the second element is a torch tensor of
+            shape (num_faces, num_landmarks * 2) and the third element
+            is a list of length num_faces. First and second elements
+            correspond to bounding boxes and landmarks for each face
+            across all samples and the third element provides an index
+            for each bounding box/set of landmarks that identifies
+            which sample that box/set (or that face) is extracted from
+            (because each sample can have multiple faces).
+        """
+        # Init variables, identify masks to filter best faces
+        cumsum, people_indices, sample_indices = 0, [], []
+        masks = scores > self.vis_threshold
 
-        priors = PriorBox(image_size=(x.size(2), x.size(3))).forward().to(device)
-        scale_b = torch.Tensor([x.size(3), x.size(2)] * 2, device=device)
-        scale_l = torch.Tensor([x.size(3), x.size(2)] * 5, device=device)
+        # Flatten across batch filtered predictions, compute face areas
+        scores, bboxes, landms = scores[masks], bboxes[masks], landms[masks]
+        areas = (bboxes[:, 2]-bboxes[:, 0]+1) * (bboxes[:, 3]-bboxes[:, 1]+1)
 
-        scores = conf[..., 1:2]
-        boxes = decode(loc, priors, self.variance) * scale_b
-        landms = decode_landm(landms, priors, self.variance) * scale_l
+        for i, num_valid in enumerate(masks.sum(dim=1)):
+            # Extract all face preds for a single sample
+            start, end, keep = cumsum, cumsum+num_valid, []
+            bbox, area = bboxes[start:end], areas[start:end]
+            scores_sorted = scores[start:end].argsort(descending=True)
 
-        indices, landmarks = [], []
+            while scores_sorted.numel() > 0:
+                # Append best face's index to keep
+                keep.append(j := scores_sorted[0])
+                
+                # Find coordinates that at least bound the current face
+                xy1 = torch.maximum(bbox[j, :2], bbox[scores_sorted[1:], :2])
+                xy2 = torch.minimum(bbox[j, 2:], bbox[scores_sorted[1:], 2:])
 
-        for i in range(len(images)):
-            inds = torch.where(scores[i] > self.vis_threshold)[0]
-            bbs, lms, scs = boxes[i][inds], landms[i][inds], scores[i][inds]
-            keep = py_cpu_nms(torch.hstack((bbs, scs)), self.nms_threshold)
+                # Compute width and height for the current minimal face
+                w = torch.maximum(torch.tensor(0.0), xy2[:, 0] - xy1[:, 0] + 1)
+                h = torch.maximum(torch.tensor(0.0), xy2[:, 1] - xy1[:, 1] + 1)
 
-            lms = lms[keep, :]
+                # Compute nms for identifying areas for the current face
+                ovr = (a := w * h) / (area[j] + area[scores_sorted[1:]] - a)
+                
+                # Filter out current face, keep next best scores
+                inds = torch.where(ovr <= self.nms_threshold)[0]
+                scores_sorted = scores_sorted[inds + 1]
             
-            lms[:, ::2] = lms[:, ::2] * transform_back[i][0] - transform_back[i][2]
-            lms[:, 1::2] = lms[:, 1::2] * transform_back[i][1] - transform_back[i][3]
+            # Update people and sample indices, increment cumsum
+            people_indices.extend([cumsum + k for k in keep])
+            sample_indices.extend([i] * len(keep))
+            cumsum += num_valid
+        
+        # Slect the final landms and bboxes
+        bboxes = bboxes[people_indices, :]
+        landms = landms[people_indices, :]
+        
+        return landms, bboxes, sample_indices
+    
+    @torch.no_grad()
+    def predict(self, images: torch.Tensor) -> tuple[torch.Tensor, list[int]]:
+        # Retrieve the device the model is on
+        device = next(self.parameters()).device
 
+        # Convert images to appropriate input and predict landmarks
+        x = images.flip(3).permute(0, 3, 1, 2).float().to(device)
+        x -= torch.tensor([[[104]], [[117]], [[123]]], device=device)
+        bboxes, scores, landms = self(x)
 
-            if len(keep) == 0:
+        # Create prior boxes and scale factors to decode bboxes & landms
+        priors = PriorBox((x.size(2), x.size(3))).forward().to(device)
+        scale_b = torch.tensor([x.size(3), x.size(2)] * 2, device=device)
+        scale_l = torch.tensor([x.size(3), x.size(2)] * 5, device=device)
+
+        # Decode the predictions and use them to parse landmarks
+        scores = scores[..., 1]
+        bboxes = self.decode_bboxes(bboxes, priors) * scale_b
+        landms = self.decode_landms(landms, priors) * scale_l
+        landms, bboxes, indices = self.parse_landmarks(scores, bboxes, landms)
+
+        landms_new, indices_new = [], []
+        cache = {"indices": [], "bboxes": [], "landms": []}
+
+        for i in range(len(indices)):
+
+            # Add everything to cache
+            cache["indices"].append(indices[i])
+            cache["bboxes"].append(bboxes[i])
+            cache["landms"].append(landms[i])
+
+            if i != len(indices) - 1 and cache["indices"][-1] == indices[i+1]:
+                # No operations until cache for current idx is complete
                 continue
 
-            if self.strategy == "largest":
-                bbs = bbs[keep, :]
-                idx = torch.argmax((bbs[:, 2] * bbs[:, 3]).squeeze())
-                indices.append(i)
-                landmarks.append(lms[idx].reshape(-1, 2))
-            elif self.strategy == "all":
-                indices.extend([i] * len(keep))
-                landmarks.extend([*lms.reshape(len(lms), -1, 2)])
-            else:
-                raise ValueError(f"Unsupported strategy: '{self.strategy}'.")
+            match self.strategy:
+                case "all":
+                    # Append all landmarks and indices
+                    landms_new.extend(cache["landms"])
+                    indices_new.extend(cache["indices"])
+                case "best":
+                    # Append the first set of landmarks
+                    landms_new.append(cache["landms"][0])
+                    indices_new.append(cache["indices"][0])
+                case "largest":
+                    # Compute bounding box areas
+                    bbs = torch.stack(cache["bboxes"])
+                    areas = (bbs[:, 2] - bbs[:, 0] + 1) *\
+                            (bbs[:, 3] - bbs[:, 1] + 1)
+
+                    # Append only the largest face landmarks and its idx
+                    landms_new.append(cache["landms"][areas.argmax()])
+                    indices_new.append(cache["indices"][0])
+                case _:
+                    raise ValueError(f"Unsupported startegy: {self.strategy}")
+            
+            # Clear cache (reinitialize empty lists)
+            cache = {k: [] for k in cache.keys()}
         
-        return torch.stack(landmarks), indices
+        landms = torch.stack(landms_new)
+        indices = indices_new
+
+        return landms.view(len(landms), -1, 2), indices
+        
+        # indices, landmarks = [], []
+        # keeps = []
+        # cumsum = 0
+
+        # for i in range(len(images)):
+        #     inds = torch.where(scores[i] > self.vis_threshold)[0]
+        #     bbs, lms, scs = bboxes[i][inds], landms[i][inds], scores[i][inds]
+        #     keep = py_cpu_nms(torch.hstack((bbs, scs)), self.nms_threshold)
+
+        #     keeps.extend([cumsum + k for k in keep])
+        #     cumsum += len(inds)
+
+        #     lms = lms[keep, :]
+            
+        #     lms[:, ::2] = (lms[:, ::2] - pad_tmp[i][2]) * sc_tmp[i]
+        #     lms[:, 1::2] = (lms[:, 1::2] - pad_tmp[i][0]) * sc_tmp[i]
+
+        #     if len(keep) == 0:
+        #         continue
+
+        #     if self.strategy == "largest":
+        #         bbs = bbs[keep, :]
+        #         idx = torch.argmax((bbs[:, 2] * bbs[:, 3]).squeeze())
+        #         indices.append(i)
+        #         landmarks.append(lms[idx].reshape(-1, 2))
+        #     elif self.strategy == "all":
+        #         indices.extend([i] * len(keep))
+        #         landmarks.extend([*lms.reshape(len(lms), -1, 2)])
+        #     else:
+        #         raise ValueError(f"Unsupported strategy: '{self.strategy}'.")
+        
+        # print(keeps)
+        
+        # return landmarks, indices
+    
+    # @torch.no_grad()
+    # def predict(
+    #     self,
+    #     images: list[np.ndarray],
+    #     device: str | torch.device = "cpu",
+    # ):
+    #     # x = torch.stack([prep_img(image, padding, size) for image in images])
+    #     x, transform_back = [], []
+
+    #     for image in images:
+    #         img, t = prep_img(image, self.padding_mode, self.size)
+    #         x.append(img)
+    #         transform_back.append(t)
+
+    #     x = torch.stack(x)
+
+    #     x = x.permute(0, 3, 1, 2).to(device)
+    #     loc, conf, landms = self.to(device)(x)
+
+    #     priors = PriorBox(image_size=(x.size(2), x.size(3))).forward().to(device)
+    #     scale_b = torch.Tensor([x.size(3), x.size(2)] * 2, device=device)
+    #     scale_l = torch.Tensor([x.size(3), x.size(2)] * 5, device=device)
+
+    #     scores = conf[..., 1:2]
+    #     boxes = decode(loc, priors, self.variance) * scale_b
+    #     landms = decode_landm(landms, priors, self.variance) * scale_l
+
+    #     indices, landmarks = [], []
+
+    #     for i in range(len(images)):
+    #         inds = torch.where(scores[i] > self.vis_threshold)[0]
+    #         bbs, lms, scs = boxes[i][inds], landms[i][inds], scores[i][inds]
+    #         keep = py_cpu_nms(torch.hstack((bbs, scs)), self.nms_threshold)
+
+    #         lms = lms[keep, :]
+            
+    #         lms[:, ::2] = lms[:, ::2] * transform_back[i][0] - transform_back[i][2]
+    #         lms[:, 1::2] = lms[:, 1::2] * transform_back[i][1] - transform_back[i][3]
+
+
+    #         if len(keep) == 0:
+    #             continue
+
+    #         if self.strategy == "largest":
+    #             bbs = bbs[keep, :]
+    #             idx = torch.argmax((bbs[:, 2] * bbs[:, 3]).squeeze())
+    #             indices.append(i)
+    #             landmarks.append(lms[idx].reshape(-1, 2))
+    #         elif self.strategy == "all":
+    #             indices.extend([i] * len(keep))
+    #             landmarks.extend([*lms.reshape(len(lms), -1, 2)])
+    #         else:
+    #             raise ValueError(f"Unsupported strategy: '{self.strategy}'.")
+        
+    #     return torch.stack(landmarks), indices

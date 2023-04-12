@@ -101,7 +101,7 @@ def create_batch_from_img_path_list(
     size = (size, size) if isinstance(size, int) else size
     border_type = getattr(cv2, f"BORDER_{padding_mode.upper()}")
 
-    for path in path_list:
+    for i, path in enumerate(path_list):
         # Read the image from the given path, convert to RGB form
         image = cv2.cvtColor(cv2.imread(path), cv2.COLOR_BGR2RGB)
     
@@ -112,22 +112,24 @@ def create_batch_from_img_path_list(
         if (ratio_w := size[0] / w) < (ratio_h := size[1] / h):
             # Based on width 
             unscale = ratio_w
-            size_new = (size[0], h * ratio_w)
-            padding = [(size[1] - h) // 2, (size[1] - h + 1) // 2, 0, 0]
+            (ww,hh) = size[0], int(h * ratio_w)
+            padding = [(size[1] - hh) // 2, (size[1] - hh + 1) // 2, 0, 0]
         else:
             # Based on height
             unscale = ratio_h
-            size_new = (w * ratio_h, size[1])
-            padding = [0, 0, (size[0] - w) // 2, (size[0] - w + 1) // 2]
+            (ww,hh) = int(w * ratio_h), size[1]
+            padding = [0, 0, (size[0] - ww) // 2, (size[0] - ww + 1) // 2]
     
         # Pad the lower dimension with specific border type, then resize
-        image = cv2.resize(image, size_new, interpolation=interpolation)
+        image = cv2.resize(image, (ww, hh), interpolation=interpolation)
         image = cv2.copyMakeBorder(image, *padding, borderType=border_type)
+
+        # img = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+        # cv2.imwrite(f"ddemo2/processed-{i}.jpg", img)
 
         # Add images, unscale, padding to lists
         images.append(torch.from_numpy(image))
         unscales.append(torch.tensor(unscale))
         paddings.append(torch.tensor(padding))
-        
 
     return torch.stack(images), torch.stack(unscales), torch.stack(paddings)
