@@ -101,7 +101,7 @@ def create_batch_from_img_path_list(
     size = (size, size) if isinstance(size, int) else size
     border_type = getattr(cv2, f"BORDER_{padding_mode.upper()}")
 
-    for i, path in enumerate(path_list):
+    for path in path_list:
         # Read the image from the given path, convert to RGB form
         image = cv2.cvtColor(cv2.imread(path), cv2.COLOR_BGR2RGB)
     
@@ -123,9 +123,6 @@ def create_batch_from_img_path_list(
         # Pad the lower dimension with specific border type, then resize
         image = cv2.resize(image, (ww, hh), interpolation=interpolation)
         image = cv2.copyMakeBorder(image, *padding, borderType=border_type)
-
-        # img = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
-        # cv2.imwrite(f"ddemo2/processed-{i}.jpg", img)
 
         # Add images, unscale, padding to lists
         images.append(torch.from_numpy(image))

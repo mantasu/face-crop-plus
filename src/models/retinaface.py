@@ -202,6 +202,11 @@ class RetinaFace(nn.Module):
         
         # Load weights for this class
         self.load_state_dict(weights)
+        self.eval()
+        
+        for param in self.parameters():
+            # Disable gradient tracing
+            param.requires_grad = False
 
     def forward(self, x: torch.Tensor
                 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -255,13 +260,13 @@ class RetinaFace(nn.Module):
             ), dim=2)
         return landms
     
-    def parse_landmarks(
+    def filter_preds(
         self,
         scores: torch.Tensor,
         bboxes: torch.Tensor,
         landms: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor, list[int]]:
-        """Parses predictions for identified faces for each sample
+        """Filters predictions for identified faces for each sample
         
         This method works as follows:
             1. First, it filters out bad predictions based on
@@ -355,10 +360,10 @@ class RetinaFace(nn.Module):
     @torch.no_grad()
     def predict(self, images: torch.Tensor) -> tuple[torch.Tensor, list[int]]:
         # Retrieve the device the model is on
-        device = next(self.parameters()).device
+        device = images.device # next(self.parameters()).device
 
         # Convert images to appropriate input and predict landmarks
-        x = images.flip(3).permute(0, 3, 1, 2).float().to(device)
+        x = images.flip(1) # .permute(0, 3, 1, 2).float().to(device)
         x -= torch.tensor([[[104]], [[117]], [[123]]], device=device)
         scores, bboxes, landms = self(x)
 
@@ -371,7 +376,7 @@ class RetinaFace(nn.Module):
         scores = scores[..., 1]
         bboxes = self.decode_bboxes(bboxes, priors) * scale_b
         landms = self.decode_landms(landms, priors) * scale_l
-        landms, bboxes, idx = self.parse_landmarks(scores, bboxes, landms)
+        landms, bboxes, idx = self.filter_preds(scores, bboxes, landms)
 
         landmarks, indices = [], []
         cache = {"idx": [], "bboxes": [], "landms": []}
@@ -410,7 +415,7 @@ class RetinaFace(nn.Module):
             # Clear cache (reinitialize empty lists)
             cache = {k: [] for k in cache.keys()}
         
-        # Stack landmarks across batch dim, reshape as coords, to CPU
-        landmarks = torch.stack(landmarks).view(len(landmarks), -1, 2).cpu()
+        # Stack landmarks across batch dim and reshape as coords
+        landmarks = torch.stack(landmarks).view(-1, 5, 2).cpu()
 
         return landmarks, indices

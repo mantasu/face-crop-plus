@@ -3,15 +3,15 @@ import cv2
 import tqdm
 import torch
 import numpy as np
-import torchsr
-import torchsr.models
 import torch.nn.functional as F
 
 from collections import defaultdict
 from multiprocessing import cpu_count
 from multiprocessing.pool import ThreadPool
 
+from models.rrdb import RRDBNet
 from models.retinaface import RetinaFace
+
 
 from utils import parse_landmarks_file, get_landmark_indices_5, STANDARD_LANDMARKS_5, create_batch_from_img_path_list
 
@@ -32,7 +32,6 @@ class Cropper():
         sr_scale: int = 1,
         sr_model_name: str = "ninasr_b0",
         landmarks: str | tuple[np.ndarray, np.ndarray] | None = None,
-        
         output_format: str | None = None,
         batch_size: int = 8,
         num_cpus: int = cpu_count(),
@@ -55,6 +54,8 @@ class Cropper():
 
         self.sr_scale = sr_scale
 
+        self.enh_threshold = 0.001
+
         if isinstance(device, str):
             device = torch.device(device)
 
@@ -70,22 +71,30 @@ class Cropper():
     def _init_models(self):
         if self.det_model_name == "retinaface":
             det_model = RetinaFace(strategy=self.strategy)
-            det_model.to(self.device).eval()
+            det_model.to(self.device)
         else:
             raise ValueError(f"Unsupported model: {self.det_model_name}.")
         
-        if self.sr_scale > 1:
-            sr_model = getattr(torchsr.models, self.sr_model_name)
-            sr_model = sr_model(self.sr_scale, True).to(self.device).eval()
+        if self.enh_threshold is not None:
+            enh_model = RRDBNet()
+            enh_model.load(weights="BSRGAN.pth", device=self.device)
         else:
-            sr_model = None
+            enh_model = None
+        
+        if self.groups is not None:
+            grp_model = None
+        else:
+            grp_model = None
 
         self.det_model = det_model
-        self.sr_model = sr_model
+        self.enh_model = enh_model
+        self.grp_model = grp_model
     
     def estimated_align(
         self,
-        images: list[np.ndarray],
+        # images: list[np.ndarray],
+        images: np.ndarray,
+        padding: np.ndarray,
         indices: list[int],
         landmarks_source: np.ndarray,
         landmarks_target: np.ndarray,
@@ -112,10 +121,14 @@ class Cropper():
             if transform_matrix is None:
                 # Could not estimate
                 continue
+            
+            # Crop out the raw image area (without pdding)
+            img, pad = images[image_idx], padding[image_idx]
+            img = img[pad[0]:img.shape[0]-pad[1], pad[2]:img.shape[1]-pad[3]]
 
             # Apply affine transformation to the image
             transformed_images.append(cv2.warpAffine(
-                images[image_idx],
+                img,
                 transform_matrix,
                 self.output_size,
                 borderMode=border_mode
@@ -154,52 +167,58 @@ class Cropper():
 
         return landmarks, std_landmarks
     
-    @torch.no_grad()
-    def enhance_quality(self, images: np.ndarray) -> np.ndarray:
+    def enhance_quality(self, images: torch.Tensor, landmarks: np.ndarray, indices: list[int]) -> torch.Tensor:
         if self.sr_model is None:
             return images
+        
+        indices = np.array(indices)
 
-        x = torch.from_numpy(images).to(self.device)
-        x = self.sr_model(x.permute(0, 3, 1, 2).div(255))
-        # x = F.interpolate(x, size=self.output_size[::-1], mode="area")
-        x = x.permute(0, 2, 3, 1).multiply(255).cpu().numpy().astype(np.uint8)
+        for i in range(len(images)):
+            # Select faces for curr sample
+            faces = landmarks[indices == i]
 
-        return x
+            if len(faces) == 0:
+                continue
+            
+            # Compute relative face factor
+            w = faces[:, 4, 0] - faces[:, 0, 0]
+            h = faces[:, 4, 1] - faces[:, 0, 1]
+            face_factor = w * h / (images.shape[2] * images.shape[3])
+
+            if face_factor.mean() < self.enh_threshold:
+                # Enhance curr image if face factor below threshold
+                images[i:i+1] = self.sr_model.predict(images[i:i+1])
+
+        return images
 
     def process_batch(self, file_batch: list[str], input_dir: str, output_dir: str):
-        batch_np = [cv2.imread(os.path.join(input_dir, f), cv2.IMREAD_COLOR) for f in file_batch]
-
         file_paths = [os.path.join(input_dir, file) for file in file_batch]
-        batch, sc, pad = create_batch_from_img_path_list(file_paths, size=self.det_resize_size)
+        batch, scales, padding = create_batch_from_img_path_list(file_paths, size=self.det_resize_size)
+        padding = padding.numpy()
+
+        batch = batch.permute(0, 3, 1, 2).float().to(self.device)
 
         if self.landmarks is None:
             # If landmarks were not given, predict them
-            # landmarks, indices = self.det_model.predict(batch, self.device)
-            # landmarks = landmarks.cpu().numpy()
-
-            landmarks, indices = self.det_model.predict(batch)
- 
-            pad = pad[indices][..., None]
-            sc = sc[indices][:, None, None]
-
-            landmarks[..., ::2] = (landmarks[..., ::2] - pad[:, 2:3]) / sc
-            landmarks[..., 1::2] = (landmarks[..., 1::2] - pad[:, 0:1]) / sc
-
+            landmarks, indices = self.det_model.predict(batch)            
             landmarks = landmarks.numpy()
+            landmarks -= padding[indices][:, None, [2, 0]]
         else:
             # Generate indices for landmarks to take, then get landmarks
             indices = np.where(np.isin(self.landmarks[0], file_batch))[0]
             landmarks = self.landmarks[1][indices]
 
+        batch = self.enhance_quality(batch, landmarks, indices)
+        batch = batch.permute(0, 2, 3, 1).cpu().numpy().astype(np.uint8)
+
         # Generate source, target landmarks, estimate & apply transform
         src, tgt = self.generate_source_and_target_landmarks(landmarks)
-        batch_aligned = self.estimated_align(batch_np, indices, src, tgt)
-        batch_enhanced = self.enhance_quality(batch_aligned)
+        batch_aligned = self.estimated_align(batch, padding, indices, src, tgt)
         
         # Update to include only images with existing landmarks
         file_name_counts = defaultdict(lambda: -1)
         
-        for file_idx, image in zip(indices, batch_enhanced):
+        for file_idx, image in zip(indices, batch_aligned):
             file_name = file_batch[file_idx]
 
             if self.strategy == "all":
@@ -208,7 +227,7 @@ class Cropper():
                 file_name = f"{name}_{file_name_counts[file_name]}{ext}"
             
             file_path = os.path.join(output_dir, file_name)
-            cv2.imwrite(file_path, image)
+            cv2.imwrite(file_path, cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
     
     def process_dir(self, input_dir: str, output_dir: str | None = None):
         if output_dir is None:
@@ -234,5 +253,5 @@ class Cropper():
 
 
 if __name__ == "__main__":
-    cropper = Cropper(strategy="largest", det_backbone="resnet50", sr_scale=1, det_resize_size=1024)
+    cropper = Cropper(strategy="all", det_backbone="resnet50", sr_scale=4, det_resize_size=1024, device="cuda:0")
     cropper.process_dir("ddemo2")

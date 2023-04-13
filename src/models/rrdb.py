@@ -102,8 +102,28 @@ class RRDBNet(nn.Module):
 
         return out
     
-    def load(self):
-        pass
+    def load(self, device: str | torch.device = "cpu") -> nn.Module:
+        # TODO: load weights automatically from ~/.cache/torch/hub/checkpoints/
+        weights_path="weights/BSRGAN.pth"
 
-    def predict(self):
-        pass
+        # Load weights from default path
+        weights = torch.load(weights_path)
+        
+        # Load weights for this class
+        self.load_state_dict(weights)
+        self.to(device)
+        self.eval()
+        
+        for param in self.parameters():
+            # Disable gradient tracing
+            param.requires_grad = False
+
+        return self
+
+    @torch.no_grad()
+    def predict(self, images: torch.Tensor) -> torch.Tensor:
+        upscaled = self(images.div(255))
+        enhanced = F.interpolate(upscaled, scale_factor=0.25, mode="bicubic")
+        images = enhanced.clamp(0, 1).mul(255).round()
+
+        return images
