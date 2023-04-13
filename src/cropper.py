@@ -9,6 +9,7 @@ from collections import defaultdict
 from multiprocessing import cpu_count
 from multiprocessing.pool import ThreadPool
 
+from models.bise import BiSeNet
 from models.rrdb import RRDBNet
 from models.retinaface import RetinaFace
 
@@ -35,7 +36,8 @@ class Cropper():
         output_format: str | None = None,
         batch_size: int = 8,
         num_cpus: int = cpu_count(),
-        device: str | torch.device = "cpu"
+        device: str | torch.device = "cpu",
+        enh_threshold = 0.001
     ):
         self.face_factor = face_factor
         self.det_threshold = det_threshold
@@ -54,7 +56,16 @@ class Cropper():
 
         self.sr_scale = sr_scale
 
-        self.enh_threshold = 0.001
+        self.enh_threshold = enh_threshold
+        
+
+        # [eye_g, ear_r, neck_l, hat] == [6, 9, 15, 18]
+
+        self.att_threshold = 5
+        self.att_join_by_and = True
+        
+        self.att_groups = {"glasses": [6], "earings_and_necklesses": [9, 15], "no_accessuaries": [-6, -9, -15, -18]}
+        self.seg_groups = {"eys_and_eyebrows": [2, 3, 4, 5], "lip_and_mouth": [11, 12, 13], "nose": [10]}
 
         if isinstance(device, str):
             device = torch.device(device)
@@ -77,20 +88,21 @@ class Cropper():
         
         if self.enh_threshold is not None:
             enh_model = RRDBNet()
-            enh_model.load(weights="BSRGAN.pth", device=self.device)
+            enh_model.load(device=self.device)
         else:
             enh_model = None
         
         if self.groups is not None:
-            grp_model = None
+            par_model = BiSeNet()
+            par_model.load(device=self.device)
         else:
-            grp_model = None
+            par_model = None
 
         self.det_model = det_model
         self.enh_model = enh_model
-        self.grp_model = grp_model
+        self.par_model = par_model
     
-    def estimated_align(
+    def align(
         self,
         # images: list[np.ndarray],
         images: np.ndarray,
@@ -168,7 +180,7 @@ class Cropper():
         return landmarks, std_landmarks
     
     def enhance_quality(self, images: torch.Tensor, landmarks: np.ndarray, indices: list[int]) -> torch.Tensor:
-        if self.sr_model is None:
+        if self.enh_model is None:
             return images
         
         indices = np.array(indices)
@@ -187,8 +199,66 @@ class Cropper():
 
             if face_factor.mean() < self.enh_threshold:
                 # Enhance curr image if face factor below threshold
-                images[i:i+1] = self.sr_model.predict(images[i:i+1])
+                images[i:i+1] = self.enh_model.predict(images[i:i+1])
 
+        return images
+    
+    def group_by_attributes(self, parse_preds:  torch.Tensor):
+        if self.att_groups is None:
+            return None
+        
+        att_groups = {}
+
+        att_join = torch.all if self.att_join_by_and else torch.any
+        
+        for k, v in self.att_groups:
+            att_groups[k] = []
+            attr = torch.tensor(v, device=self.device).view(1, -1, 1, 1)
+            is_attr = (parse_preds.unsqueeze(1) == attr.abs()).sum(dim=(2, 3))
+
+            is_attr = att_join(torch.stack([
+                is_attr[:, i] > self.att_threshold if a > 0 else
+                is_attr[:, i] <= self.att_threshold
+                for i, a in enumerate(v)
+            ], dim=1), dim=1)
+
+            for i, pred in enumerate(parse_preds):
+                if is_attr[i]:
+                    att_groups[k].append((pred, i))
+        
+        return att_groups
+
+    def group_by_segmentation(self, ):
+        pass
+    
+    def parse_face_features(self, images: torch.Tensor):
+        images = torch.from_numpy(images).permute(0, 3, 1, 2).float().to(self.device)
+        print("Parsing", images.shape)
+        batch = []
+        t = 0
+
+        att_groups, seg_groups = None, None
+
+        if self.att_groups is not None:
+            att_groups = {k: [] for k in self.att_groups.keys()}
+        
+        if self.seg_groups is not None:
+            seg_groups = {k: [] for k in self.seg_groups.keys()}
+
+        for sub_batch in torch.split(images, self.batch_size):
+            out = self.par_model.predict(sub_batch.to(self.device))
+
+            if self.att_groups is not None:
+                for k, v in self.att_groups.items():
+                    att = torch.tensor(v, device=self.device).view(1, -1, 1, 1)
+                    is_att = (out.unsqueeze(1) == att.abs()).sum(dim=(2, 3))
+
+            
+            if self.seg_groups is not None:
+                pass
+            
+            t += len(sub_batch)
+        
         return images
 
     def process_batch(self, file_batch: list[str], input_dir: str, output_dir: str):
@@ -213,7 +283,10 @@ class Cropper():
 
         # Generate source, target landmarks, estimate & apply transform
         src, tgt = self.generate_source_and_target_landmarks(landmarks)
-        batch_aligned = self.estimated_align(batch, padding, indices, src, tgt)
+        batch_aligned = self.align(batch, padding, indices, src, tgt)
+        batch = self.parse_face_features(batch_aligned)
+
+        batch_aligned = batch.permute(0, 2, 3, 1).cpu().numpy().astype(np.uint8)
         
         # Update to include only images with existing landmarks
         file_name_counts = defaultdict(lambda: -1)
@@ -253,5 +326,5 @@ class Cropper():
 
 
 if __name__ == "__main__":
-    cropper = Cropper(strategy="all", det_backbone="resnet50", sr_scale=4, det_resize_size=1024, device="cuda:0")
+    cropper = Cropper(strategy="largest", det_backbone="resnet50", det_resize_size=1024, device="cuda:0", face_factor=0.55)
     cropper.process_dir("ddemo2")
