@@ -69,13 +69,8 @@ class Cropper():
     
     def _init_models(self):
         if self.det_model_name == "retinaface":
-            det_model = RetinaFace(
-                backbone_name=self.det_backbone,
-                size=self.det_resize_size,
-                vis_threshold=self.det_threshold,
-                strategy=self.strategy,
-                device=self.device,
-            ).to(self.device).eval()
+            det_model = RetinaFace(strategy=self.strategy)
+            det_model.to(self.device).eval()
         else:
             raise ValueError(f"Unsupported model: {self.det_model_name}.")
         
