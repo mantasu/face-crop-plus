@@ -57,6 +57,8 @@ class Cropper():
         self.sr_scale = sr_scale
 
         self.enh_threshold = enh_threshold
+
+        self.format = "jpg"
         
 
         # [eye_g, ear_r, neck_l, hat] == [6, 9, 15, 18]
@@ -64,8 +66,14 @@ class Cropper():
         self.att_threshold = 5
         self.att_join_by_and = True
         
-        self.att_groups = {"glasses": [6], "earings_and_necklesses": [9, 15], "no_accessuaries": [-6, -9, -15, -18]}
-        self.seg_groups = {"eys_and_eyebrows": [2, 3, 4, 5], "lip_and_mouth": [11, 12, 13], "nose": [10]}
+        # self.att_groups = {"glasses": [6], "earings_and_necklesses": [9, 15], "no_accessuaries": [-6, -9, -15, -18]}
+        self.att_groups = {"glasses": [6], "earings": [9], "neckless": [15], "hat": [18], "no_accessuaries": [-6, -9, -15, -18]}
+        
+        self.seg_groups = {"eyes_and_eyebrows": [2, 3, 4, 5], "lip_and_mouth": [11, 12, 13], "nose": [10]}
+
+        # self.att_groups = None
+        # self.seg_groups = None
+
 
         if isinstance(device, str):
             device = torch.device(device)
@@ -92,7 +100,7 @@ class Cropper():
         else:
             enh_model = None
         
-        if self.groups is not None:
+        if self.att_groups is not None or self.seg_groups is not None:
             par_model = BiSeNet()
             par_model.load(device=self.device)
         else:
@@ -102,9 +110,8 @@ class Cropper():
         self.enh_model = enh_model
         self.par_model = par_model
     
-    def align(
+    def crop_align(
         self,
-        # images: list[np.ndarray],
         images: np.ndarray,
         padding: np.ndarray,
         indices: list[int],
@@ -193,8 +200,9 @@ class Cropper():
                 continue
             
             # Compute relative face factor
-            w = faces[:, 4, 0] - faces[:, 0, 0]
-            h = faces[:, 4, 1] - faces[:, 0, 1]
+            # w = faces[:, 4, 0] - faces[:, 0, 0]
+            # h = faces[:, 4, 1] - faces[:, 0, 1]
+            [w, h] = (faces[:, 4] - faces[:, 0]).T
             face_factor = w * h / (images.shape[2] * images.shape[3])
 
             if face_factor.mean() < self.enh_threshold:
@@ -203,16 +211,10 @@ class Cropper():
 
         return images
     
-    def group_by_attributes(self, parse_preds:  torch.Tensor):
-        if self.att_groups is None:
-            return None
-        
-        att_groups = {}
-
+    def group_by_attributes(self, parse_preds: torch.Tensor, att_groups: dict[str, list[int]], offset: int) -> dict[str, list[int]]:        
         att_join = torch.all if self.att_join_by_and else torch.any
         
-        for k, v in self.att_groups:
-            att_groups[k] = []
+        for k, v in self.att_groups.items():
             attr = torch.tensor(v, device=self.device).view(1, -1, 1, 1)
             is_attr = (parse_preds.unsqueeze(1) == attr.abs()).sum(dim=(2, 3))
 
@@ -222,85 +224,245 @@ class Cropper():
                 for i, a in enumerate(v)
             ], dim=1), dim=1)
 
-            for i, pred in enumerate(parse_preds):
-                if is_attr[i]:
-                    att_groups[k].append((pred, i))
+            inds = [i + offset for i in range(len(is_attr)) if is_attr[i]]
+            att_groups[k].extend(inds)
         
         return att_groups
 
-    def group_by_segmentation(self, ):
-        pass
-    
-    def parse_face_features(self, images: torch.Tensor):
-        images = torch.from_numpy(images).permute(0, 3, 1, 2).float().to(self.device)
-        print("Parsing", images.shape)
-        batch = []
-        t = 0
+    def group_by_segmentation(self, parse_preds: torch.Tensor, seg_groups: dict[str, tuple[list[int], list[np.ndarray]]], offset: int) -> dict[str, tuple[list[int], list[np.ndarray]]]:
+        for k, v in self.seg_groups.items():
+            attr = torch.tensor(v, device=self.device).view(1, -1, 1, 1)
+            mask = (parse_preds.unsqueeze(1) == attr).any(dim=1)
 
-        att_groups, seg_groups = None, None
+            inds = [i for i in range(len(mask)) if mask[i].sum() > 5]
+            masks = mask[inds].mul(255).cpu().numpy().astype(np.uint8)
+
+            seg_groups[k][0].extend([i + offset for i in inds])
+            seg_groups[k][1].extend(masks.tolist())
+
+        return seg_groups
+    
+    def parse(self, images: torch.Tensor):
+        if self.par_model is None:
+            return None, None
+        
+        images = torch.from_numpy(images).permute(0, 3, 1, 2).float().to(self.device)
+        att_groups, seg_groups, offset = None, None, 0
 
         if self.att_groups is not None:
             att_groups = {k: [] for k in self.att_groups.keys()}
         
         if self.seg_groups is not None:
-            seg_groups = {k: [] for k in self.seg_groups.keys()}
+            seg_groups = {k: ([], []) for k in self.seg_groups.keys()}
 
         for sub_batch in torch.split(images, self.batch_size):
             out = self.par_model.predict(sub_batch.to(self.device))
 
             if self.att_groups is not None:
-                for k, v in self.att_groups.items():
-                    att = torch.tensor(v, device=self.device).view(1, -1, 1, 1)
-                    is_att = (out.unsqueeze(1) == att.abs()).sum(dim=(2, 3))
-
+                att_groups = self.group_by_attributes(out, att_groups, offset)
             
             if self.seg_groups is not None:
-                pass
+                seg_groups = self.group_by_segmentation(out, seg_groups, offset)
             
-            t += len(sub_batch)
+            offset += len(sub_batch)
         
-        return images
+        if seg_groups is not None:
+            seg_groups = {k: v for k, v in seg_groups.items() if len(v[1]) > 0}
+            for k, v in seg_groups.items():
+                seg_groups[k] = (v[0], np.stack(v[1]))
+        
+        return att_groups, seg_groups
+    
+    def save_group(
+        self,
+        faces: np.ndarray,
+        file_names: list[str],
+        output_dir: str
+    ):
+        os.makedirs(output_dir, exist_ok=True)
+        file_name_counts = defaultdict(lambda: -1)
 
-    def process_batch(self, file_batch: list[str], input_dir: str, output_dir: str):
-        file_paths = [os.path.join(input_dir, file) for file in file_batch]
-        batch, scales, padding = create_batch_from_img_path_list(file_paths, size=self.det_resize_size)
-        padding = padding.numpy()
+        for face, file_name in zip(faces, file_names):
+            name, ext = os.path.splitext(file_name)
+            ext = ext if self.format is None else '.' + self.format
 
-        batch = batch.permute(0, 3, 1, 2).float().to(self.device)
+            if self.det_model.strategy == "all":
+                file_name_counts[file_name] += 1
+                name += f"_{file_name_counts[file_name]}"
+            
+            if face.ndim == 3:
+                face = cv2.cvtColor(face, cv2.COLOR_RGB2BGR)
 
-        if self.landmarks is None:
+            file_path = os.path.join(output_dir, name + ext)
+            cv2.imwrite(file_path, face)
+    
+    def save_groups(
+        self,
+        faces: np.ndarray,
+        file_names: np.ndarray,
+        output_dir: str,
+        attr_groups: dict[str, list[int]] | None,
+        mask_groups: dict[str, tuple[list[int], np.ndarray]] | None,
+    ):
+        """Saves images (and masks) group-wise.
+
+        This method takes a batch of face images of equal dimensions, a 
+        batch of file names identifying which image each face comes 
+        from, and, optionally, attribute and/or mask groups telling how 
+        to split the face images (and masks) across different folders.
+        This method then loops through all the groups and saves images 
+        accordingly.
+
+        Example 1:
+            If neither `attr_groups` nor `mask_groups` are provided, the 
+            face images will be saved according to this structure:
+            ```
+            ├── output_dir
+            |    ├── face_image_0.jpg
+            |    ├── face_image_1.png
+            |    ...
+            ```
+
+        Example 2:
+            If only `attr_groups` is provided (keys are names describing 
+            common attributes across faces in that group and they are
+            also sub-directories of `output_dir`), the structure is as
+            follows:
+            ```
+            ├── output_dir
+            |    ├── attribute_group_1
+            |    |    ├── face_image_0.jpg
+            |    |    ├── face_image_1.png
+            |    |    ...
+            |    ├── attribute_group_2
+            |    ...
+            ```
+        
+        Example 3:
+            If only `mask_groups` is provided (keys are names describing 
+            the mask type and they are also sub-directories of
+            `output_dir`), the structure is as follows:
+            ```
+            ├── output_dir
+            |    ├── group_1
+            |    |    ├── face_image_0.jpg
+            |    |    ├── face_image_1.png
+            |    |    ...
+            |    ├── group_1_mask
+            |    |    ├── face_image_0.jpg
+            |    |    ├── face_image_1.png
+            |    |    ...
+            |    ├── group_2
+            |    |    ...
+            |    ├── group_2_mask
+            |    |    ...
+            |    ...
+            ```
+        
+        Example 4:
+            If both `attr_groups` and `mask_groups` are provided, then 
+            all images and masks will first be grouped by attributes and 
+            then by mask groups. The structure is then as follows:
+            ```
+            ├── output_dir
+            |    ├── attribute_group_1
+            |    |    ├── group_1_mask
+            |    |    |    ├── face_image_0.jpg
+            |    |    |    ├── face_image_1.png
+            |    |    |    ...
+            |    |    ├── group_1_mask
+            |    |    |    ├── face_image_0.jpg
+            |    |    |    ├── face_image_1.png
+            |    |    |    ...
+            |    |    ├── group_2
+            |    |    |    ...
+            |    |    ├── group_2_mask
+            |    |    |    ...
+            |    |    ...
+            |    |
+            |    ├── attribute_group_2
+            |    |    ...
+            |    ...
+            ```
+
+        Args:
+            faces: Face images (cropped and aligned) represented as a
+                numpy array of shape (N, H, W, 3) with values of type
+                np.uint8 ranging from 0 to 255.
+            file_names: File names of images from which the faces were 
+                extracted from. This value is a numpy array of shape
+                (N,) with values of type 'U' (numpy string type). Each
+                nth face in `faces` maps to exactly one file nth name in
+                this array, thus there may be duplicate file names
+                (because different faces may come from the same file).
+            output_dir: The output directory where the faces or folders 
+                of faces will be saved to.
+            attr_groups: Face groups by attributes. Each key represents 
+                the group name (describes common attributes across
+                faces) and each value is a list of indices identifying 
+                faces (from `faces`) that should go to that group.
+            mask_groups: Face groups by extracted masks. Each key
+                represents group name (describes the mask type) and each 
+                value is a tuple where the first element is a list of 
+                indices identifying faces (from `faces`) that should go 
+                to that group and the second element is a batch of masks
+                corresponding to indexed faces represented as a numpy
+                arrays of shape (N, H, W) with values of type np.uint8 
+                and being either 0 (negative) or 255 (positive).
+        """
+        if attr_groups is None:
+            # No-name group of idx mapping to all faces
+            attr_groups = {'': list(range(len(faces)))}
+        
+        if mask_groups is None:
+            # No-name group mapping to all faces, with no masks
+            mask_groups = {'': (list(range(len(faces))), None)}
+
+        for attr_name, attr_indices in attr_groups.items():
+            for mask_name, (mask_indices, masks) in mask_groups.items():
+                # Make mask group values that fall under attribute group
+                group_idx = list(set(attr_indices) & set(mask_indices))
+                group_dir = os.path.join(output_dir, attr_name, mask_name)
+
+                # Retrieve group values & save
+                face_group = faces[group_idx]
+                file_name_group = file_names[group_idx]
+                self.save_group(face_group, file_name_group, group_dir)
+
+                if masks is not None:
+                    # Save to masks dir
+                    group_dir += "_mask"
+                    masks = masks[[mask_indices.index(i) for i in group_idx]]
+                    self.save_group(masks, file_name_group, group_dir)
+
+    def process_batch(self, file_names: list[str], input_dir: str, output_dir: str):
+        file_paths = [os.path.join(input_dir, file) for file in file_names]
+        # images, paddings = load_images_as_batch(file_paths, self.mean_size)
+        images, scales, paddings = create_batch_from_img_path_list(file_paths, size=self.det_resize_size)
+        paddings = paddings.numpy()
+
+        images = images.permute(0, 3, 1, 2).float().to(self.device)
+
+        if self.det_model is not None:
             # If landmarks were not given, predict them
-            landmarks, indices = self.det_model.predict(batch)            
+            landmarks, indices = self.det_model.predict(images)            
             landmarks = landmarks.numpy()
-            landmarks -= padding[indices][:, None, [2, 0]]
-        else:
+            landmarks -= paddings[indices][:, None, [2, 0]]
+        elif self.landmarks is not None:
             # Generate indices for landmarks to take, then get landmarks
-            indices = np.where(np.isin(self.landmarks[0], file_batch))[0]
+            indices = np.where(np.isin(self.landmarks[0], file_names))[0]
             landmarks = self.landmarks[1][indices]
 
-        batch = self.enhance_quality(batch, landmarks, indices)
-        batch = batch.permute(0, 2, 3, 1).cpu().numpy().astype(np.uint8)
+        images = self.enhance_quality(images, landmarks, indices)
+        images = images.permute(0, 2, 3, 1).cpu().numpy().astype(np.uint8)
 
         # Generate source, target landmarks, estimate & apply transform
         src, tgt = self.generate_source_and_target_landmarks(landmarks)
-        batch_aligned = self.align(batch, padding, indices, src, tgt)
-        batch = self.parse_face_features(batch_aligned)
-
-        batch_aligned = batch.permute(0, 2, 3, 1).cpu().numpy().astype(np.uint8)
+        faces = self.crop_align(images, paddings, indices, src, tgt)
         
-        # Update to include only images with existing landmarks
-        file_name_counts = defaultdict(lambda: -1)
-        
-        for file_idx, image in zip(indices, batch_aligned):
-            file_name = file_batch[file_idx]
+        file_names = np.array(file_names)[indices]
+        self.save_groups(faces, file_names, output_dir, *self.parse(faces))
 
-            if self.strategy == "all":
-                file_name_counts[file_name] += 1
-                name, ext = os.path.splitext(file_name)
-                file_name = f"{name}_{file_name_counts[file_name]}{ext}"
-            
-            file_path = os.path.join(output_dir, file_name)
-            cv2.imwrite(file_path, cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
     
     def process_dir(self, input_dir: str, output_dir: str | None = None):
         if output_dir is None:
@@ -326,5 +488,5 @@ class Cropper():
 
 
 if __name__ == "__main__":
-    cropper = Cropper(strategy="largest", det_backbone="resnet50", det_resize_size=1024, device="cuda:0", face_factor=0.55)
+    cropper = Cropper(strategy="all", det_backbone="resnet50", det_resize_size=1024, device="cuda:0", face_factor=0.55)
     cropper.process_dir("ddemo2")

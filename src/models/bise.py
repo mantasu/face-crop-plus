@@ -39,13 +39,6 @@ class BasicBlock(nn.Module):
         return out
 
 
-def create_layer_basic(in_chan, out_chan, bnum, stride=1):
-    layers = [BasicBlock(in_chan, out_chan, stride=stride)]
-    for i in range(bnum-1):
-        layers.append(BasicBlock(out_chan, out_chan, stride=1))
-    return nn.Sequential(*layers)
-
-
 class Resnet18(nn.Module):
     def __init__(self):
         super(Resnet18, self).__init__()
@@ -53,11 +46,17 @@ class Resnet18(nn.Module):
                                bias=False)
         self.bn1 = nn.BatchNorm2d(64)
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
-        self.layer1 = create_layer_basic(64, 64, bnum=2, stride=1)
-        self.layer2 = create_layer_basic(64, 128, bnum=2, stride=2)
-        self.layer3 = create_layer_basic(128, 256, bnum=2, stride=2)
-        self.layer4 = create_layer_basic(256, 512, bnum=2, stride=2)
+        self.layer1 = self.create_layer_basic(64, 64, bnum=2, stride=1)
+        self.layer2 = self.create_layer_basic(64, 128, bnum=2, stride=2)
+        self.layer3 = self.create_layer_basic(128, 256, bnum=2, stride=2)
+        self.layer4 = self.create_layer_basic(256, 512, bnum=2, stride=2)
         # self.init_weight()
+    
+    def create_layer_basic(self, in_chan, out_chan, bnum, stride=1):
+        layers = [BasicBlock(in_chan, out_chan, stride=stride)]
+        for i in range(bnum-1):
+            layers.append(BasicBlock(out_chan, out_chan, stride=1))
+        return nn.Sequential(*layers)
 
     def forward(self, x):
         x = self.conv1(x)
@@ -354,7 +353,7 @@ class BiSeNet(nn.Module):
         # Convert mean, std and attr to tensors and reshape in advance
         mean = torch.tensor([0.485, 0.456, 0.406], device=images.device)
         std = torch.tensor([0.229, 0.224, 0.225], device=images.device)
-        att = torch.tensor([6, 9, 15, 18], device=images.device)
+        # att = torch.tensor([6, 9, 15, 18], device=images.device)
         size_orig = (images.size(2), images.size(3))
 
         # Create proper input, infer, resize back output
@@ -363,7 +362,7 @@ class BiSeNet(nn.Module):
         out = F.interpolate(x, size_orig, mode="nearest").argmax(1)
 
         # Check which attributes from [eye_g, ear_r, neck_l, hat] exist
-        exist = (out.unsqueeze(1) == att.view(1, -1, 1, 1)).sum(dim=(2, 3)) > 5
+        # exist = (out.unsqueeze(1) == att.view(1, -1, 1, 1)).sum(dim=(2, 3)) > 5
 
         return out
 
