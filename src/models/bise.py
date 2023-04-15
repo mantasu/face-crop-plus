@@ -1,385 +1,114 @@
 import torch
+import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
+from ._layers import LoadMixin, ContextPath, FeatureFusionModule, BiSeNetOutput
 
 
-class BasicBlock(nn.Module):
-    def __init__(self, in_chan, out_chan, stride=1):
-        super(BasicBlock, self).__init__()
-        self.conv1 = self.conv3x3(in_chan, out_chan, stride)
-        self.bn1 = nn.BatchNorm2d(out_chan)
-        self.conv2 = self.conv3x3(out_chan, out_chan)
-        self.bn2 = nn.BatchNorm2d(out_chan)
-        self.relu = nn.ReLU(inplace=True)
-        self.downsample = None
-        if in_chan != out_chan or stride != 1:
-            self.downsample = nn.Sequential(
-                nn.Conv2d(in_chan, out_chan,
-                          kernel_size=1, stride=stride, bias=False),
-                nn.BatchNorm2d(out_chan),
-                )
-    
-    def conv3x3(self, in_planes, out_planes, stride=1):
-        """3x3 convolution with padding"""
-        return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride,
-                        padding=1, bias=False)
+class BiSeNet(nn.Module, LoadMixin):
+    WEIGHTS_FILENAME = "bise_parser.pth"
 
-    def forward(self, x):
-        residual = self.conv1(x)
-        residual = F.relu(self.bn1(residual))
-        residual = self.conv2(residual)
-        residual = self.bn2(residual)
+    def __init__(self, attr_groups: dict[str, list[int]] | None = None, mask_groups: dict[str, list[int]] | None = None):
+        super().__init__()
+        self.attr_groups = attr_groups
+        self.mask_groups = mask_groups
+        self.att_join_by_and = True
+        self.attr_threshold = 5
+        self.batch_size = 8
 
-        shortcut = x
-        if self.downsample is not None:
-            shortcut = self.downsample(x)
-
-        out = shortcut + residual
-        out = self.relu(out)
-        return out
-
-
-class Resnet18(nn.Module):
-    def __init__(self):
-        super(Resnet18, self).__init__()
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3,
-                               bias=False)
-        self.bn1 = nn.BatchNorm2d(64)
-        self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
-        self.layer1 = self.create_layer_basic(64, 64, bnum=2, stride=1)
-        self.layer2 = self.create_layer_basic(64, 128, bnum=2, stride=2)
-        self.layer3 = self.create_layer_basic(128, 256, bnum=2, stride=2)
-        self.layer4 = self.create_layer_basic(256, 512, bnum=2, stride=2)
-        # self.init_weight()
-    
-    def create_layer_basic(self, in_chan, out_chan, bnum, stride=1):
-        layers = [BasicBlock(in_chan, out_chan, stride=stride)]
-        for i in range(bnum-1):
-            layers.append(BasicBlock(out_chan, out_chan, stride=1))
-        return nn.Sequential(*layers)
-
-    def forward(self, x):
-        x = self.conv1(x)
-        x = F.relu(self.bn1(x))
-        x = self.maxpool(x)
-
-        x = self.layer1(x)
-        feat8 = self.layer2(x) # 1/8
-        feat16 = self.layer3(feat8) # 1/16
-        feat32 = self.layer4(feat16) # 1/32
-        return feat8, feat16, feat32
-
-    # def init_weight(self):
-    #     state_dict = modelzoo.load_url(resnet18_url)
-    #     self_state_dict = self.state_dict()
-    #     for k, v in state_dict.items():
-    #         if 'fc' in k: continue
-    #         self_state_dict.update({k: v})
-    #     self.load_state_dict(self_state_dict)
-
-    # def get_params(self):
-    #     wd_params, nowd_params = [], []
-    #     for name, module in self.named_modules():
-    #         if isinstance(module, (nn.Linear, nn.Conv2d)):
-    #             wd_params.append(module.weight)
-    #             if not module.bias is None:
-    #                 nowd_params.append(module.bias)
-    #         elif isinstance(module,  nn.BatchNorm2d):
-    #             nowd_params += list(module.parameters())
-    #     return wd_params, nowd_params
-
-
-class ConvBNReLU(nn.Module):
-    def __init__(self, in_chan, out_chan, ks=3, stride=1, padding=1, *args, **kwargs):
-        super(ConvBNReLU, self).__init__()
-        self.conv = nn.Conv2d(in_chan,
-                out_chan,
-                kernel_size = ks,
-                stride = stride,
-                padding = padding,
-                bias = False)
-        self.bn = nn.BatchNorm2d(out_chan)
-        # self.init_weight()
-
-    def forward(self, x):
-        x = self.conv(x)
-        x = F.relu(self.bn(x))
-        return x
-
-    # def init_weight(self):
-    #     for ly in self.children():
-    #         if isinstance(ly, nn.Conv2d):
-    #             nn.init.kaiming_normal_(ly.weight, a=1)
-    #             if not ly.bias is None: nn.init.constant_(ly.bias, 0)
-
-class BiSeNetOutput(nn.Module):
-    def __init__(self, in_chan, mid_chan, n_classes, *args, **kwargs):
-        super(BiSeNetOutput, self).__init__()
-        self.conv = ConvBNReLU(in_chan, mid_chan, ks=3, stride=1, padding=1)
-        self.conv_out = nn.Conv2d(mid_chan, n_classes, kernel_size=1, bias=False)
-        # self.init_weight()
-
-    def forward(self, x):
-        x = self.conv(x)
-        x = self.conv_out(x)
-        return x
-
-    # def init_weight(self):
-    #     for ly in self.children():
-    #         if isinstance(ly, nn.Conv2d):
-    #             nn.init.kaiming_normal_(ly.weight, a=1)
-    #             if not ly.bias is None: nn.init.constant_(ly.bias, 0)
-
-    # def get_params(self):
-    #     wd_params, nowd_params = [], []
-    #     for name, module in self.named_modules():
-    #         if isinstance(module, nn.Linear) or isinstance(module, nn.Conv2d):
-    #             wd_params.append(module.weight)
-    #             if not module.bias is None:
-    #                 nowd_params.append(module.bias)
-    #         elif isinstance(module, nn.BatchNorm2d):
-    #             nowd_params += list(module.parameters())
-    #     return wd_params, nowd_params
-
-
-class AttentionRefinementModule(nn.Module):
-    def __init__(self, in_chan, out_chan, *args, **kwargs):
-        super(AttentionRefinementModule, self).__init__()
-        self.conv = ConvBNReLU(in_chan, out_chan, ks=3, stride=1, padding=1)
-        self.conv_atten = nn.Conv2d(out_chan, out_chan, kernel_size= 1, bias=False)
-        self.bn_atten = nn.BatchNorm2d(out_chan)
-        self.sigmoid_atten = nn.Sigmoid()
-        # self.init_weight()
-
-    def forward(self, x):
-        feat = self.conv(x)
-        atten = F.avg_pool2d(feat, feat.size()[2:])
-        atten = self.conv_atten(atten)
-        atten = self.bn_atten(atten)
-        atten = self.sigmoid_atten(atten)
-        out = torch.mul(feat, atten)
-        return out
-
-    # def init_weight(self):
-    #     for ly in self.children():
-    #         if isinstance(ly, nn.Conv2d):
-    #             nn.init.kaiming_normal_(ly.weight, a=1)
-    #             if not ly.bias is None: nn.init.constant_(ly.bias, 0)
-
-
-class ContextPath(nn.Module):
-    def __init__(self, *args, **kwargs):
-        super(ContextPath, self).__init__()
-        self.resnet = Resnet18()
-        self.arm16 = AttentionRefinementModule(256, 128)
-        self.arm32 = AttentionRefinementModule(512, 128)
-        self.conv_head32 = ConvBNReLU(128, 128, ks=3, stride=1, padding=1)
-        self.conv_head16 = ConvBNReLU(128, 128, ks=3, stride=1, padding=1)
-        self.conv_avg = ConvBNReLU(512, 128, ks=1, stride=1, padding=0)
-
-        # self.init_weight()
-
-    def forward(self, x):
-        # H0, W0 = x.size()[2:]
-        feat8, feat16, feat32 = self.resnet(x)
-        H8, W8 = feat8.size()[2:]
-        H16, W16 = feat16.size()[2:]
-        H32, W32 = feat32.size()[2:]
-
-        avg = F.avg_pool2d(feat32, feat32.size()[2:])
-        avg = self.conv_avg(avg)
-        avg_up = F.interpolate(avg, (H32, W32), mode='nearest')
-
-        feat32_arm = self.arm32(feat32)
-        feat32_sum = feat32_arm + avg_up
-        feat32_up = F.interpolate(feat32_sum, (H16, W16), mode='nearest')
-        feat32_up = self.conv_head32(feat32_up)
-
-        feat16_arm = self.arm16(feat16)
-        feat16_sum = feat16_arm + feat32_up
-        feat16_up = F.interpolate(feat16_sum, (H8, W8), mode='nearest')
-        feat16_up = self.conv_head16(feat16_up)
-
-        return feat8, feat16_up, feat32_up  # x8, x8, x16
-
-    # def init_weight(self):
-    #     for ly in self.children():
-    #         if isinstance(ly, nn.Conv2d):
-    #             nn.init.kaiming_normal_(ly.weight, a=1)
-    #             if not ly.bias is None: nn.init.constant_(ly.bias, 0)
-
-    # def get_params(self):
-    #     wd_params, nowd_params = [], []
-    #     for name, module in self.named_modules():
-    #         if isinstance(module, (nn.Linear, nn.Conv2d)):
-    #             wd_params.append(module.weight)
-    #             if not module.bias is None:
-    #                 nowd_params.append(module.bias)
-    #         elif isinstance(module, nn.BatchNorm2d):
-    #             nowd_params += list(module.parameters())
-    #     return wd_params, nowd_params
-
-
-### This is not used, since I replace this with the resnet feature with the same size
-# class SpatialPath(nn.Module):
-#     def __init__(self, *args, **kwargs):
-#         super(SpatialPath, self).__init__()
-#         self.conv1 = ConvBNReLU(3, 64, ks=7, stride=2, padding=3)
-#         self.conv2 = ConvBNReLU(64, 64, ks=3, stride=2, padding=1)
-#         self.conv3 = ConvBNReLU(64, 64, ks=3, stride=2, padding=1)
-#         self.conv_out = ConvBNReLU(64, 128, ks=1, stride=1, padding=0)
-#         self.init_weight()
-
-#     def forward(self, x):
-#         feat = self.conv1(x)
-#         feat = self.conv2(feat)
-#         feat = self.conv3(feat)
-#         feat = self.conv_out(feat)
-#         return feat
-
-#     def init_weight(self):
-#         for ly in self.children():
-#             if isinstance(ly, nn.Conv2d):
-#                 nn.init.kaiming_normal_(ly.weight, a=1)
-#                 if not ly.bias is None: nn.init.constant_(ly.bias, 0)
-
-#     def get_params(self):
-#         wd_params, nowd_params = [], []
-#         for name, module in self.named_modules():
-#             if isinstance(module, nn.Linear) or isinstance(module, nn.Conv2d):
-#                 wd_params.append(module.weight)
-#                 if not module.bias is None:
-#                     nowd_params.append(module.bias)
-#             elif isinstance(module, nn.BatchNorm2d):
-#                 nowd_params += list(module.parameters())
-#         return wd_params, nowd_params
-
-
-class FeatureFusionModule(nn.Module):
-    def __init__(self, in_chan, out_chan, *args, **kwargs):
-        super(FeatureFusionModule, self).__init__()
-        self.convblk = ConvBNReLU(in_chan, out_chan, ks=1, stride=1, padding=0)
-        self.conv1 = nn.Conv2d(out_chan,
-                out_chan//4,
-                kernel_size = 1,
-                stride = 1,
-                padding = 0,
-                bias = False)
-        self.conv2 = nn.Conv2d(out_chan//4,
-                out_chan,
-                kernel_size = 1,
-                stride = 1,
-                padding = 0,
-                bias = False)
-        self.relu = nn.ReLU(inplace=True)
-        self.sigmoid = nn.Sigmoid()
-        # self.init_weight()
-
-    def forward(self, fsp, fcp):
-        fcat = torch.cat([fsp, fcp], dim=1)
-        feat = self.convblk(fcat)
-        atten = F.avg_pool2d(feat, feat.size()[2:])
-        atten = self.conv1(atten)
-        atten = self.relu(atten)
-        atten = self.conv2(atten)
-        atten = self.sigmoid(atten)
-        feat_atten = torch.mul(feat, atten)
-        feat_out = feat_atten + feat
-        return feat_out
-
-    # def init_weight(self):
-    #     for ly in self.children():
-    #         if isinstance(ly, nn.Conv2d):
-    #             nn.init.kaiming_normal_(ly.weight, a=1)
-    #             if not ly.bias is None: nn.init.constant_(ly.bias, 0)
-
-    # def get_params(self):
-    #     wd_params, nowd_params = [], []
-    #     for name, module in self.named_modules():
-    #         if isinstance(module, nn.Linear) or isinstance(module, nn.Conv2d):
-    #             wd_params.append(module.weight)
-    #             if not module.bias is None:
-    #                 nowd_params.append(module.bias)
-    #         elif isinstance(module, nn.BatchNorm2d):
-    #             nowd_params += list(module.parameters())
-    #     return wd_params, nowd_params
-
-
-class BiSeNet(nn.Module):
-    def __init__(self, n_classes=19, *args, **kwargs):
-        super(BiSeNet, self).__init__()
         self.cp = ContextPath()
-        ## here self.sp is deleted
         self.ffm = FeatureFusionModule(256, 256)
-        self.conv_out = BiSeNetOutput(256, 256, n_classes)
-        self.conv_out16 = BiSeNetOutput(128, 64, n_classes)
-        self.conv_out32 = BiSeNetOutput(128, 64, n_classes)
-        # self.init_weight()
-    
-    def load(self, device: str | torch.device = "cpu") -> nn.Module:
-        # TODO: load weights automatically from ~/.cache/torch/hub/checkpoints/
-        weights_path="weights/79999_iter.pth"
-
-        # Load weights from default path
-        weights = torch.load(weights_path)
-        
-        # Load weights for this class
-        self.load_state_dict(weights)
-        self.to(device)
-        self.eval()
-        
-        for param in self.parameters():
-            # Disable gradient tracing
-            param.requires_grad = False
-
-        return self
+        self.conv_out = BiSeNetOutput(256, 256, 19)
 
     def forward(self, x):
-        H, W = x.size()[2:]
-        feat_res8, feat_cp8, feat_cp16 = self.cp(x)  # here return res3b1 feature
-        feat_sp = feat_res8  # use res3b1 feature to replace spatial path feature
-        feat_fuse = self.ffm(feat_sp, feat_cp8)
+        feat_out = self.conv_out(self.ffm(*self.cp(x)))
+        return F.interpolate(feat_out, x.size()[2:], None, "bilinear", True)
+    
+    def group_by_attributes(self, parse_preds: torch.Tensor, att_groups: dict[str, list[int]], offset: int) -> dict[str, list[int]]:        
+        att_join = torch.all if self.att_join_by_and else torch.any
+        
+        for k, v in self.attr_groups.items():
+            attr = torch.tensor(v, device=parse_preds.device).view(1, -1, 1, 1)
+            is_attr = (parse_preds.unsqueeze(1) == attr.abs()).sum(dim=(2, 3))
 
-        feat_out = self.conv_out(feat_fuse)
-        feat_out16 = self.conv_out16(feat_cp8)
-        feat_out32 = self.conv_out32(feat_cp16)
+            is_attr = att_join(torch.stack([
+                is_attr[:, i] > self.attr_threshold if a > 0 else
+                is_attr[:, i] <= self.attr_threshold
+                for i, a in enumerate(v)
+            ], dim=1), dim=1)
 
-        feat_out = F.interpolate(feat_out, (H, W), mode='bilinear', align_corners=True)
-        feat_out16 = F.interpolate(feat_out16, (H, W), mode='bilinear', align_corners=True)
-        feat_out32 = F.interpolate(feat_out32, (H, W), mode='bilinear', align_corners=True)
-        return feat_out, feat_out16, feat_out32
+            inds = [i + offset for i in range(len(is_attr)) if is_attr[i]]
+            att_groups[k].extend(inds)
+        
+        return att_groups
+
+    def group_by_segmentation(self, parse_preds: torch.Tensor, seg_groups: dict[str, tuple[list[int], list[np.ndarray]]], offset: int) -> dict[str, tuple[list[int], list[np.ndarray]]]:
+        for k, v in self.mask_groups.items():
+            attr = torch.tensor(v, device=parse_preds.device).view(1, -1, 1, 1)
+            mask = (parse_preds.unsqueeze(1) == attr).any(dim=1)
+
+            inds = [i for i in range(len(mask)) if mask[i].sum() > 5]
+            masks = mask[inds].mul(255).cpu().numpy().astype(np.uint8)
+
+            seg_groups[k][0].extend([i + offset for i in inds])
+            seg_groups[k][1].extend(masks.tolist())
+
+        return seg_groups
+    
+    # def parse(self, images: torch.Tensor):        
+        
+
+    #     for sub_batch in torch.split(images, self.batch_size):
+    #         out = self.par_model.predict(sub_batch.to(self.device))
+
+    #         if self.attr_groups is not None:
+    #             att_groups = self.group_by_attributes(out, att_groups, offset)
+            
+    #         if self.mask_groups is not None:
+    #             seg_groups = self.group_by_segmentation(out, seg_groups, offset)
+            
+    #         offset += len(sub_batch)
+        
+    #     if seg_groups is not None:
+    #         seg_groups = {k: v for k, v in seg_groups.items() if len(v[1]) > 0}
+    #         for k, v in seg_groups.items():
+    #             seg_groups[k] = (v[0], np.stack(v[1]))
+        
+    #     return att_groups, seg_groups
     
     def predict(self, images: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        att_groups, seg_groups, offset = None, None, 0
+
+        if self.attr_groups is not None:
+            att_groups = {k: [] for k in self.attr_groups.keys()}
+        
+        if self.mask_groups is not None:
+            seg_groups = {k: ([], []) for k in self.mask_groups.keys()}
+        
         # Convert mean, std and attr to tensors and reshape in advance
         mean = torch.tensor([0.485, 0.456, 0.406], device=images.device)
         std = torch.tensor([0.229, 0.224, 0.225], device=images.device)
-        # att = torch.tensor([6, 9, 15, 18], device=images.device)
-        size_orig = (images.size(2), images.size(3))
 
         # Create proper input, infer, resize back output
         x = F.interpolate(images.div(255), (512, 512), mode="bilinear")
-        x = self((x - mean.view(1, 3, 1, 1)) / std.view(1, 3, 1, 1))[0]
-        out = F.interpolate(x, size_orig, mode="nearest").argmax(1)
+        
 
-        # Check which attributes from [eye_g, ear_r, neck_l, hat] exist
-        # exist = (out.unsqueeze(1) == att.view(1, -1, 1, 1)).sum(dim=(2, 3)) > 5
+        for sub_x in torch.split(x, self.batch_size):
+            # out = self.par_model.predict(sub_batch.to(self.device))
+            out = self((sub_x - mean.view(1, 3, 1, 1)) / std.view(1, 3, 1, 1))
+            out = F.interpolate(out, images.size()[2:], mode="nearest").argmax(1)
 
-        return out
+            if self.attr_groups is not None:
+                att_groups = self.group_by_attributes(out, att_groups, offset)
+            
+            if self.mask_groups is not None:
+                seg_groups = self.group_by_segmentation(out, seg_groups, offset)
+            
+            offset += len(sub_x)
+        
+        if seg_groups is not None:
+            seg_groups = {k: v for k, v in seg_groups.items() if len(v[1]) > 0}
+            for k, v in seg_groups.items():
+                seg_groups[k] = (v[0], np.stack(v[1]))
 
-    # def init_weight(self):
-    #     for ly in self.children():
-    #         if isinstance(ly, nn.Conv2d):
-    #             nn.init.kaiming_normal_(ly.weight, a=1)
-    #             if not ly.bias is None: nn.init.constant_(ly.bias, 0)
-
-    # def get_params(self):
-    #     wd_params, nowd_params, lr_mul_wd_params, lr_mul_nowd_params = [], [], [], []
-    #     for name, child in self.named_children():
-    #         child_wd_params, child_nowd_params = child.get_params()
-    #         if isinstance(child, FeatureFusionModule) or isinstance(child, BiSeNetOutput):
-    #             lr_mul_wd_params += child_wd_params
-    #             lr_mul_nowd_params += child_nowd_params
-    #         else:
-    #             wd_params += child_wd_params
-    #             nowd_params += child_nowd_params
-    #     return wd_params, nowd_params, lr_mul_wd_params, lr_mul_nowd_params
+        return att_groups, seg_groups

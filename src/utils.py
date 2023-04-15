@@ -12,7 +12,6 @@ STANDARD_LANDMARKS_5 = np.float32([
     [0.65343645833333330, 0.8246919642857142],
 ])
 
-
 def parse_landmarks_file(
     file_path: str,
     **kwargs,
@@ -85,7 +84,8 @@ def create_batch_from_img_path_list(
     Args:
         path_list: The list of paths to images.
         padding_mode: The type of padding to apply to pad the shorter
-            dimension. For the available options, see <https://docs.opencv.org/3.4/d2/de8/group__core__array.html#ga209f2f4869e304c82d07739337eae7c5>.
+            dimension. For the available options, see
+            <https://docs.opencv.org/3.4/d2/de8/group__core__array.html#ga209f2f4869e304c82d07739337eae7c5>.
             It can be all lowercase. Defaults to "constant".
         size: The width and the height each image should be resized +
             padded to. I.e., the spacial dimensions of the batch. If

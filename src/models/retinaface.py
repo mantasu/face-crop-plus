@@ -2,157 +2,89 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.models as models
-
-from math import ceil
-from itertools import product
-from torchvision.models._utils import IntermediateLayerGetter
+import torchvision.models._utils as utils
+from ._layers import LoadMixin, PriorBox, SSH, FPN, Head
 
 
-class PriorBox(object):
-    def __init__(self, image_size=None):
-        super(PriorBox, self).__init__()
-        # self.min_sizes = cfg['min_sizes']
-        # self.steps = cfg['steps']
-        # self.clip = cfg['clip']
-        self.min_sizes = [[16, 32], [64, 128], [256, 512]]
-        self.steps = [8, 16, 32]
-        self.clip = False
-        self.image_size = image_size
-        self.feature_maps = [[ceil(self.image_size[0]/step), ceil(self.image_size[1]/step)] for step in self.steps]
-        self.name = "s"
+class RetinaFace(nn.Module, LoadMixin):
+    """RetinaFace face detector and 5-point landmark detector.
 
-    def forward(self):
-        anchors = []
-        for k, f in enumerate(self.feature_maps):
-            min_sizes = self.min_sizes[k]
-            for i, j in product(range(f[0]), range(f[1])):
-                for min_size in min_sizes:
-                    s_kx = min_size / self.image_size[1]
-                    s_ky = min_size / self.image_size[0]
-                    dense_cx = [x * self.steps[k] / self.image_size[1] for x in [j + 0.5]]
-                    dense_cy = [y * self.steps[k] / self.image_size[0] for y in [i + 0.5]]
-                    for cy, cx in product(dense_cy, dense_cx):
-                        anchors += [cx, cy, s_kx, s_ky]
+    This class is capable of predicting 5-point landmarks from a batch 
+    of images and filter them based on strategy, e.g., "all landmarks in 
+    the image", "a single set of landmarks per image of the largest
+    face". For more information, see the main method of this class
+    :py:meth:`~RetinaFace.predict`. For main attributes, see
+    :py:meth:`~RetinaFace.__init__`.
 
-        # back to torch land
-        output = torch.Tensor(anchors).view(-1, 4)
-        if self.clip:
-            output.clamp_(max=1, min=0)
-        return output
+    This class also inherits `load` method from `LoadMixin` class. The 
+    method takes a device on which to load the model and loads the 
+    model with a default state dictionary loaded from `WEIGHTS_FILENAME` 
+    file. It sets this model to eval mode and disables gradients.
 
+    For more information on how RetinaFace model works, see this repo:
+    <https://github.com/biubug6/Pytorch_Retinaface>. Most of the code 
+    was taken from that repository.
 
-class SSH(nn.Module):
-    def __init__(self, in_channel, out_channel):
-        super(SSH, self).__init__()
-        assert out_channel % 4 == 0
-        leaky = 0
-        if (out_channel <= 64):
-            leaky = 0.1
-        self.conv3X3 = self.conv_bn_no_relu(in_channel, out_channel//2, stride=1)
-
-        self.conv5X5_1 = self.conv_bn(in_channel, out_channel//4, stride=1, leaky = leaky)
-        self.conv5X5_2 = self.conv_bn_no_relu(out_channel//4, out_channel//4, stride=1)
-
-        self.conv7X7_2 = self.conv_bn(out_channel//4, out_channel//4, stride=1, leaky = leaky)
-        self.conv7x7_3 = self.conv_bn_no_relu(out_channel//4, out_channel//4, stride=1)
+    Note:
+        Whenever an input shape is mentioned, N corresponds to batch 
+        size, C corresponds to the number of channels, H - to input
+        height, and W - to input width. `out_dim` corresponds to the
+        total guesses (the number of priors) the model made about each
+        sample. Within those guesses, there typically exists at least 1 
+        face but can be more. By default, it should be 43,008.
     
-    def conv_bn(self, inp, oup, stride = 1, leaky = 0):
-        return nn.Sequential(
-            nn.Conv2d(inp, oup, 3, stride, 1, bias=False),
-            nn.BatchNorm2d(oup),
-            nn.LeakyReLU(negative_slope=leaky, inplace=True)
-        )
+    Attributes:
+        WEIGHTS_FILENAME (str): The constant specifying the name of 
+            `.pth` file from which the weights for this model should be 
+            loaded. Defaults to 'retinaface_detector.pth'.
+    """
+    WEIGHTS_FILENAME = "retinaface_detector.pth"
 
-    def conv_bn_no_relu(self, inp, oup, stride):
-        return nn.Sequential(
-            nn.Conv2d(inp, oup, 3, stride, 1, bias=False),
-            nn.BatchNorm2d(oup),
-        )
+    def __init__(self, strategy: str = "all", vis: float = 0.6):
+        """Initializes RetinaFace model.
 
-    def forward(self, input):
-        conv3X3 = self.conv3X3(input)
-
-        conv5X5_1 = self.conv5X5_1(input)
-        conv5X5 = self.conv5X5_2(conv5X5_1)
-
-        conv7X7_2 = self.conv7X7_2(conv5X5_1)
-        conv7X7 = self.conv7x7_3(conv7X7_2)
-
-        out = torch.cat([conv3X3, conv5X5, conv7X7], dim=1)
-        out = F.relu(out)
-        return out
-
-
-class FPN(nn.Module):
-    def __init__(self,in_channels_list,out_channels):
-        super(FPN,self).__init__()
-        leaky = 0
-        if (out_channels <= 64):
-            leaky = 0.1
-        self.output1 = self.conv_bn1X1(in_channels_list[0], out_channels, stride = 1, leaky = leaky)
-        self.output2 = self.conv_bn1X1(in_channels_list[1], out_channels, stride = 1, leaky = leaky)
-        self.output3 = self.conv_bn1X1(in_channels_list[2], out_channels, stride = 1, leaky = leaky)
-
-        self.merge1 = self.conv_bn(out_channels, out_channels, leaky = leaky)
-        self.merge2 = self.conv_bn(out_channels, out_channels, leaky = leaky)
-    
-    def conv_bn(self, inp, oup, stride = 1, leaky = 0):
-        return nn.Sequential(
-            nn.Conv2d(inp, oup, 3, stride, 1, bias=False),
-            nn.BatchNorm2d(oup),
-            nn.LeakyReLU(negative_slope=leaky, inplace=True)
-        )
-    
-    def conv_bn1X1(self, inp, oup, stride, leaky=0):
-        return nn.Sequential(
-            nn.Conv2d(inp, oup, 1, stride, padding=0, bias=False),
-            nn.BatchNorm2d(oup),
-            nn.LeakyReLU(negative_slope=leaky, inplace=True)
-        )
-
-    def forward(self, input):
-        # names = list(input.keys())
-        input = list(input.values())
-
-        output1 = self.output1(input[0])
-        output2 = self.output2(input[1])
-        output3 = self.output3(input[2])
-
-        up3 = F.interpolate(output3, size=[output2.size(2), output2.size(3)], mode="nearest")
-        output2 = output2 + up3
-        output2 = self.merge2(output2)
-
-        up2 = F.interpolate(output2, size=[output1.size(2), output1.size(3)], mode="nearest")
-        output1 = output1 + up2
-        output1 = self.merge1(output1)
-
-        out = [output1, output2, output3]
-        return out
-
-class Head(nn.Module):
-    def __init__(self, num_out: int, in_channels: int = 512):
-        super().__init__()
-        self.num_out = num_out
-        self.conv1x1 = nn.Conv2d(in_channels, 2 * num_out, 1)
-    
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.conv1x1(x)
-        out = x.permute(0, 2, 3, 1).contiguous()
+        First it assigns the passed values as attributes. Be default,
+        it also initializes the following variables which can be changed
+        after initializing the class (but, typically, should not be
+        changed):
+            * `nms_threshold` (float): The threshold, based on which 
+                multiple bounding box or landmark predictions for the
+                same face are merged into one. Defaults to 0.4.
+            * `variance` (list[int]): The variance of the bounding 
+                boxes used to undo the encoding of coordinates of raw 
+                bounding box and landmark predictions.
         
-        return out.view(out.size(0), -1, self.num_out)
-    
-    @classmethod
-    def make(cls, num_out: int, in_channels: int = 512) -> nn.ModuleList:
-        head = nn.ModuleList([cls(num_out, in_channels) for _ in range(3)])
-        return head
+        Then this method initialized ResNet-50 backbone and further 
+        layers required for face detection and bbox/landm predictions.
 
-class RetinaFace(nn.Module):
-    def __init__(self, strategy: str = "all"):
+        Args:
+            strategy: The strategy used to retrieve the landmarks when
+                :py:meth:`~RetinaFace.predict` is called. The available 
+                options are:
+                    * 'all' - landmarks for all faces per single image
+                      (single batch entry) will be considered.
+                    * 'best' - landmarks for a single face with the
+                       highest confidence score per image will be
+                       considered.
+                    * 'largest' - landmarks for a single largest face
+                       per image will be considered.
+                The most efficient option is 'best' and the least
+                efficient is 'largest'. Defaults to "all".
+            vis: The visual threshold, i.e., minimum confidence score,
+                for a face to be considered an actual face. Lower
+                scores will allow the detection of more faces per image
+                but can result in non-actual faces, e.g., random
+                surfaces somewhat representing faces. Higher scores will 
+                prevent detecting faulty faces but may result in only a
+                few faces detected, whereas there can be more, e.g., 
+                higher will prevent the detection of blurry faces. 
+                Defaults to 0.6.
+        """
         super().__init__()
 
         # Initialize attributes
         self.strategy = strategy
-        self.vis_threshold = 0.6
+        self.vis_threshold = vis
         self.nms_threshold = 0.4
         self.variance = [0.1, 0.2]
 
@@ -162,13 +94,8 @@ class RetinaFace(nn.Module):
         in_channels_list = [in_channels * x for x in [2, 4, 8]]
         return_layers = {'layer2': 1, 'layer3': 2, 'layer4': 3}
 
-        # backbone = MobileNetV1()
-        # in_channels, out_channels = 32, 64
-        # in_channels_list = [in_channels * x for x in [2, 4, 8]]
-        # return_layers = {'stage1': 1, 'stage2': 2, 'stage3': 3}
-
         # Construct the backbone by retrieving intermediate layers
-        self.body = IntermediateLayerGetter(backbone, return_layers)
+        self.body = utils.IntermediateLayerGetter(backbone, return_layers)
 
         # Construct sub-layers to extract features for heads
         self.fpn = FPN(in_channels_list, out_channels)
@@ -181,35 +108,30 @@ class RetinaFace(nn.Module):
         self.BboxHead = Head.make(4, out_channels)
         self.LandmarkHead = Head.make(10, out_channels)
 
-        # Load weights
-        self.load()
-    
-    def remove_prefix(self, state_dict, prefix):
-        ''' Old style model is stored with all names of parameters sharing common prefix 'module.' '''
-        f = lambda x: x.split(prefix, 1)[-1] if x.startswith(prefix) else x
-        return {f(key): value for key, value in state_dict.items()}
+    def forward(
+        self,
+        x: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Performs forward pass.
 
-    def load(self):
-        # TODO: load weights automatically from ~/.cache/torch/hub/checkpoints/
-        weights_path="weights/RetinaFace-R50.pth"
+        Takes an input batch and performs inference based on the modules 
+        of this module class. Returns an unfiltered tuple of scores,
+        bounding boxes and landmarks for all the possible detected
+        faces. The predictions are encoded to comfortably compute the 
+        loss during training and thus should be decoded to coordinates.
 
-        # Load weights from default path
-        weights = torch.load(weights_path)
+        Args:
+            x: The input tensor of shape (N, 3, H, W).
 
-        # Update module names by removing "module." prefix if it exists
-        remove_prefix = lambda x: x[7:] if x.startswith("module.") else x
-        weights = {remove_prefix(k): v for k, v in weights.items()}
-        
-        # Load weights for this class
-        self.load_state_dict(weights)
-        self.eval()
-        
-        for param in self.parameters():
-            # Disable gradient tracing
-            param.requires_grad = False
-
-    def forward(self, x: torch.Tensor
-                ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        Returns:
+            A tuple of torch tensors where the first element is
+            confidence scores for each prediction of shape
+            (N, out_dim, 2) with values between 0 and 1 representing
+            probabilities, the second element is bounding boxes of shape 
+            (N, out_dim, 4) with unbounded values and the last element 
+            is landmarks of shape (N, out_dim, 10) with unbounded
+            values.
+        """
         # Extract FPN + SSH features
         fpn = self.fpn(self.body(x))
         fts = [self.ssh1(fpn[0]), self.ssh2(fpn[1]), self.ssh3(fpn[2])]
@@ -220,44 +142,72 @@ class RetinaFace(nn.Module):
         
         return F.softmax(pred[0], dim=-1), pred[1], pred[2]
     
-    def decode_bboxes(self, loc, priors):
-        """Decode locations from predictions using priors to undo
-        the encoding we did for offset regression at train time.
+    def decode_bboxes(
+        self,
+        loc: torch.Tensor,
+        priors: torch.Tensor
+    ) -> torch.Tensor:
+        """Decodes bounding boxes from predictions.
+
+        Takes the predicted bounding boxes (locations) and undoes the 
+        encoding for offset regression used at training time.
+
         Args:
-            loc (tensor): location predictions for loc layers,
-                Shape: [num_priors,4]
-            priors (tensor): Prior boxes in center-offset form.
-                Shape: [num_priors,4].
-            variances: (list[float]) Variances of priorboxes
-        Return:
-            decoded bounding box predictions
+            loc: Bounding box (location) predictions for loc layers of
+                shape (N, out_dim, 4). 
+            priors: Prior boxes in center-offset form of shape
+                (out_dim, 4).
+
+        Returns:
+            A tensor of shape (N, out_dim, 4) representing decoded
+            bounding box predictions where the last dim can be
+            interpreted as x1, y1, x2, y2 coordinates - the start and
+            the end corners defining the face box.
         """
+        # Concatenate priors
         boxes = torch.cat((
             priors[:, :2] + loc[..., :2] * self.variance[0] * priors[:, 2:],
-            priors[:, 2:] * torch.exp(loc[..., 2:] * self.variance[1])), 2)
+            priors[:, 2:] * torch.exp(loc[..., 2:] * self.variance[1])
+        ), 2)
+        
+        # Adjust values for proper xy coords
         boxes[..., :2] -= boxes[..., 2:] / 2
         boxes[..., 2:] += boxes[..., :2]
+
         return boxes
 
-    def decode_landms(self, pre, priors):
-        """Decode landm from predictions using priors to undo
-        the encoding we did for offset regression at train time.
+    def decode_landms(
+        self,
+        pre: torch.Tensor,
+        priors: torch.Tensor,
+    ) -> torch.Tensor:
+        """Decodes landmarks from predictions.
+
+        Takes the predicted landmarks (pre) and undoes the encoding for
+        offset regression used at training time.
+
         Args:
-            pre (tensor): landm predictions for loc layers,
-                Shape: [num_priors,10]
-            priors (tensor): Prior boxes in center-offset form.
-                Shape: [num_priors,4].
-            variances: (list[float]) Variances of priorboxes
-        Return:
-            decoded landm predictions
+            pre: Landmark predictions for loc layers of shape
+                (N, out_dim, 10).
+            priors: Prior boxes in center-offset form of shape
+                (out_dim, 4).
+
+        Returns:
+            A tensor of shape (N, out_dim, 10) representing decoded
+            landmark predictions where the last dim can be
+            interpreted as x1, y1, ..., x10, y10 coordinates - one for 
+            each of the 5 landmarks.
         """
-        landms = torch.cat(
-            (priors[..., :2] + pre[..., :2] * self.variance[0] * priors[..., 2:],
-             priors[..., :2] + pre[..., 2:4] * self.variance[0] * priors[..., 2:],
-             priors[..., :2] + pre[..., 4:6] * self.variance[0] * priors[..., 2:],
-             priors[..., :2] + pre[..., 6:8] * self.variance[0] * priors[..., 2:],
-             priors[..., :2] + pre[..., 8:10] * self.variance[0] * priors[..., 2:],
-            ), dim=2)
+        # Concatenate priors
+        var = self.variance
+        landms = torch.cat((
+            priors[..., :2] + pre[..., :2] * var[0] * priors[..., 2:],
+            priors[..., :2] + pre[..., 2:4] * var[0] * priors[..., 2:],
+            priors[..., :2] + pre[..., 4:6] * var[0] * priors[..., 2:],
+            priors[..., :2] + pre[..., 6:8] * var[0] * priors[..., 2:],
+            priors[..., :2] + pre[..., 8:10] * var[0] * priors[..., 2:],
+        ), dim=2)
+
         return landms
     
     def filter_preds(
@@ -266,7 +216,7 @@ class RetinaFace(nn.Module):
         bboxes: torch.Tensor,
         landms: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor, list[int]]:
-        """Filters predictions for identified faces for each sample
+        """Filters predictions for identified faces for each sample.
         
         This method works as follows:
             1. First, it filters out bad predictions based on
@@ -351,33 +301,68 @@ class RetinaFace(nn.Module):
             sample_indices.extend([i] * len(keep))
             cumsum += num_valid
         
-        # Slect the final landms and bboxes
+        # Select the final landms and bboxes
         bboxes = bboxes[people_indices, :]
         landms = landms[people_indices, :]
         
         return landms, bboxes, sample_indices
     
-    @torch.no_grad()
-    def predict(self, images: torch.Tensor) -> tuple[torch.Tensor, list[int]]:
-        # Retrieve the device the model is on
-        device = images.device # next(self.parameters()).device
+    def take_by_strategy(
+        self,
+        landms: torch.Tensor,
+        bboxes: torch.Tensor,
+        idx: list[int],
+    ) -> tuple[torch.Tensor, list[int]]:
+        """Filters landmarks according to strategy.
 
-        # Convert images to appropriate input and predict landmarks
-        x = images.flip(1) # .permute(0, 3, 1, 2).float().to(device)
-        x -= torch.tensor([[[104]], [[117]], [[123]]], device=device)
-        scores, bboxes, landms = self(x)
+        This method takes a batch of landmarks and bounding boxes (one
+        for each face) filters only specific landmarks by a specific
+        strategy. Here are the following cases of strategy:
+            * 'all' - effectively, nothing is done and simply the
+              already passed values `landms` and `idx` are returned 
+              without any changes.
+            * 'best' - the very first set of landmarks for each image 
+              image is returned (the first set is the best set because
+              the landmarks were sorted when duplicates were filtered
+              out in :py:meth:`~RetinaFace.filter_preds`). This means
+              the returned indices list is unique, e.g., goes from 
+              `[0, 0, 0, 1, 1, 2, 3, 3]` to `[0, 1, 2, 3]`.
+            * 'largest' - similar to 'best', except that this strategy
+              requires performing additional computation to find out the 
+              largest face based on the area of bounding boxes. Thus the 
+              length of the `idx` list (which is equal to the number of 
+              sets of landmarks) is the same as for 'best' strategy,
+              except not the first (best) faces (actually, their
+              landmarks) for each image but selected faces are returned.
+        
+        Note:
+            Strategy 'best' is most memory efficient, strategy 'largest' 
+            is least time efficient. Strategy 'all' is as fast as 'best' 
+            but takes up more space.
 
-        # Create prior boxes and scale factors to decode bboxes & landms
-        priors = PriorBox((x.size(2), x.size(3))).forward().to(device)
-        scale_b = torch.tensor([x.size(3), x.size(2)] * 2, device=device)
-        scale_l = torch.tensor([x.size(3), x.size(2)] * 5, device=device)
+        Args:
+            landms: Landmarks batch of shape (num_faces, num_landm * 2).
+            bboxes: Bounding boxes batch of shape (num_faces, 4).
+            idx: Indices where each index maps to an image from
+                which some face prediction (landmarks and bounding box) 
+                was retrieved. For instance if the 2nd element of idx is 
+                1, that means that the 2nd element of `landms` and the
+                2nd element of `bboxes` correspond to the 1st image. 
+                This list is ascending, meaning the elements are
+                grouped and increase, for example, the list may look
+                like this: `[0, 0, 1, 2, 3, 3, 3, 3, 4, 4, 5, 6, 6]`.
 
-        # Decode the predictions and use them to parse landmarks
-        scores = scores[..., 1]
-        bboxes = self.decode_bboxes(bboxes, priors) * scale_b
-        landms = self.decode_landms(landms, priors) * scale_l
-        landms, bboxes, idx = self.filter_preds(scores, bboxes, landms)
+        Raises:
+            ValueError: If the strategy is not supported.
 
+        Returns:
+            A tuple where the first element is torch tensor of shape 
+            (num_faces, num_landm * 2) representing the selected sets of 
+            landmarks and the second element is a list of indices where 
+            each index maps a corresponding set of landmarks (face) to 
+            an image identified by that index.
+        """
+        # Init helper variables
         landmarks, indices = [], []
         cache = {"idx": [], "bboxes": [], "landms": []}
 
@@ -415,7 +400,68 @@ class RetinaFace(nn.Module):
             # Clear cache (reinitialize empty lists)
             cache = {k: [] for k in cache.keys()}
         
+        # Stack landmarks across batch dim
+        landmarks = torch.stack(landmarks)
+    
+        return landmarks, indices
+    
+    @torch.no_grad()
+    def predict(self, images: torch.Tensor) -> tuple[torch.Tensor, list[int]]:
+        """Predict the sets of landmarks from the image batch.
+
+        This method takes a batch of images, detect all visible faces, 
+        predicts bounding boxes and landmarks for each face and then 
+        filters those faces according to a specific strategy - see
+        :py:meth:`~RetinaFace.take_by_strategy` for more info. Finally, 
+        it returns those selected sets of landmarks and corresponding 
+        indices that map each set to a specific image where the face was 
+        originally detected.
+        
+        The predicted sets of landmarks are 5-point coordinates:
+            1. (x1, y1) - coordinate of the left eye
+            2. (x2, y2) - coordinate of the right eye
+            3. (x3, y3) - coordinate of the nose tip
+            4. (x4, y4) - coordinate of the left mouth corner
+            5. (x5, y5) - coordinate of the right mouth corner
+        
+        The coordinates are with respect to the sizes of the images 
+        (typically padded) provided as an input to this method. Also, 
+        coordinates are specified from observer's viewpoint, meaning 
+        that, for instance, left eye is the eye on the left hand-side of 
+        the image rather than the left eye from the person's to whom the 
+        eye belongs perspective.
+
+        Args:
+            images: Image batch of shape (N, 3, H, W) in RGB form with 
+                float values from 0.0 to 255.0. It must be on the same 
+                device as this model.
+
+        Returns:
+            A tuple where the first element is torch tensor of shape 
+            (num_faces, 5, 2) representing the selected sets of 
+            landmark coordinates and the second element is a list of
+            corresponding indices mapping each face to an image it comes
+            from.
+        """
+        # Convert images to appropriate input and perform inference
+        x, offset = images[:, [2, 1, 0]], torch.tensor([104, 117, 123])
+        scores, bboxes, landms = self(x - offset.view(3, 1, 1).to(x.device))
+
+        # Create prior boxes and scale factors to decode bboxes & landms
+        priors = PriorBox((x.size(2), x.size(3))).forward().to(x.device)
+        scale_b = torch.tensor([x.size(3), x.size(2)] * 2, device=x.device)
+        scale_l = torch.tensor([x.size(3), x.size(2)] * 5, device=x.device)
+
+        # Decode the predictions
+        scores = scores[..., 1]
+        bboxes = self.decode_bboxes(bboxes, priors) * scale_b
+        landms = self.decode_landms(landms, priors) * scale_l
+
+        # Filter out bad predictions, then filter by strategy
+        filtered = self.filter_preds(scores, bboxes, landms)
+        landmarks, indices = self.take_by_strategy(*filtered)
+
         # Stack landmarks across batch dim and reshape as coords
-        landmarks = torch.stack(landmarks).view(-1, 5, 2).cpu()
+        landmarks = landmarks.view(-1, 5, 2).cpu()
 
         return landmarks, indices

@@ -17,98 +17,82 @@ from models.retinaface import RetinaFace
 from utils import parse_landmarks_file, get_landmark_indices_5, STANDARD_LANDMARKS_5, create_batch_from_img_path_list
 
 class Cropper():
+    # [eye_g, ear_r, neck_l, hat] == [6, 9, 15, 18]
 
     def __init__(
         self,
-        face_factor: float = 0.65,
-        padding: str = "reflect",
-        strategy: str = "largest",
-        output_size: tuple[int, int] = (256, 256),
-        num_std_landmarks: int = 5,
-        is_partial: bool = True,
-        det_model_name: str = "retinaface",
-        det_backbone: str = "mobilenet0.25",
-        det_threshold: float = 0.6,
-        det_resize_size: int = 512,
-        sr_scale: int = 1,
-        sr_model_name: str = "ninasr_b0",
-        landmarks: str | tuple[np.ndarray, np.ndarray] | None = None,
+        output_size: int | tuple[int, int] = 256,
         output_format: str | None = None,
+        resize_size: int | tuple[int, int] = 1024,
+        face_factor: float = 0.65,
+        strategy: str = "largest",
+        padding: str = "reflect",
+        is_partial: bool = True,
+        landmarks: str | tuple[np.ndarray, np.ndarray] | None = None,
+        attr_groups: dict[str, list[int]] | None = None,
+        mask_groups: dict[str, list[int]] | None = None,
+        det_threshold: float | None = 0.6,
+        enh_threshold: float | None = 0.001,
         batch_size: int = 8,
         num_cpus: int = cpu_count(),
         device: str | torch.device = "cpu",
-        enh_threshold = 0.001
     ):
-        self.face_factor = face_factor
-        self.det_threshold = det_threshold
-        self.det_resize_size = det_resize_size
-        self.padding = padding
+        # Init specified attributes
         self.output_size = output_size
         self.output_format = output_format
+        self.resize_size = resize_size
+        self.face_factor = face_factor
         self.strategy = strategy
+        self.padding = padding
+        self.is_partial = is_partial
+        self.landmarks = landmarks
+        self.attr_groups = attr_groups
+        self.mask_groups = mask_groups
+        self.det_threshold = det_threshold
+        self.enh_threshold = enh_threshold
         self.batch_size = batch_size
         self.num_cpus = num_cpus
-        self.num_std_landmarks = num_std_landmarks
-        self.is_partial = is_partial
-        self.sr_model_name = sr_model_name
-        self.det_model_name = det_model_name
-        self.det_backbone = det_backbone
-
-        self.sr_scale = sr_scale
-
-        self.enh_threshold = enh_threshold
-
-        self.format = "jpg"
-        
-
-        # [eye_g, ear_r, neck_l, hat] == [6, 9, 15, 18]
-
-        self.att_threshold = 5
-        self.att_join_by_and = True
-        
-        # self.att_groups = {"glasses": [6], "earings_and_necklesses": [9, 15], "no_accessuaries": [-6, -9, -15, -18]}
-        self.att_groups = {"glasses": [6], "earings": [9], "neckless": [15], "hat": [18], "no_accessuaries": [-6, -9, -15, -18]}
-        
-        self.seg_groups = {"eyes_and_eyebrows": [2, 3, 4, 5], "lip_and_mouth": [11, 12, 13], "nose": [10]}
-
-        # self.att_groups = None
-        # self.seg_groups = None
-
-
-        if isinstance(device, str):
-            device = torch.device(device)
-
-        if isinstance(landmarks, str):
-            landmarks = parse_landmarks_file(landmarks)
-        
-        # self.det_model = det_model
-        self.landmarks = landmarks
         self.device = device
+
+        # Default parameters
+        self.num_std_landmarks = 5
+        self.att_join_by_and = True
+        self.attr_threshold = 5
+
+        if isinstance(self.output_size, int):
+            self.output_size = (self.output_size, self.output_size)
+        
+        if isinstance(self.resize_size, int):
+            self.resize_size = (self.resize_size, self.resize_size)
+
+        if isinstance(self.device, str):
+            self.device = torch.device(device)
+
+        if isinstance(self.landmarks, str):
+            self.landmarks = parse_landmarks_file(self.landmarks)
 
         self._init_models()
     
     def _init_models(self):
-        if self.det_model_name == "retinaface":
-            det_model = RetinaFace(strategy=self.strategy)
-            det_model.to(self.device)
-        else:
-            raise ValueError(f"Unsupported model: {self.det_model_name}.")
+        # Init models as None
+        self.det_model = None
+        self.enh_model = None
+        self.par_model = None
+
+        if self.det_threshold is not None:
+            # If detection threshold is set, we will predict landmarks
+            self.det_model = RetinaFace(self.strategy, self.det_threshold)
+            self.det_model.load(device=self.device)
         
         if self.enh_threshold is not None:
-            enh_model = RRDBNet()
-            enh_model.load(device=self.device)
-        else:
-            enh_model = None
+            # If enhancement threshold is set, we might enhance quality
+            self.enh_model = RRDBNet(self.enh_threshold)
+            self.enh_model.load(device=self.device)
         
-        if self.att_groups is not None or self.seg_groups is not None:
-            par_model = BiSeNet()
-            par_model.load(device=self.device)
-        else:
-            par_model = None
-
-        self.det_model = det_model
-        self.enh_model = enh_model
-        self.par_model = par_model
+        if self.attr_groups is not None or self.mask_groups is not None:
+            # If grouping by attributes or masks is set, use parse model
+            self.par_model = BiSeNet(self.attr_groups, self.mask_groups)
+            self.par_model.load(device=self.device)
     
     def crop_align(
         self,
@@ -200,8 +184,6 @@ class Cropper():
                 continue
             
             # Compute relative face factor
-            # w = faces[:, 4, 0] - faces[:, 0, 0]
-            # h = faces[:, 4, 1] - faces[:, 0, 1]
             [w, h] = (faces[:, 4] - faces[:, 0]).T
             face_factor = w * h / (images.shape[2] * images.shape[3])
 
@@ -211,88 +193,34 @@ class Cropper():
 
         return images
     
-    def group_by_attributes(self, parse_preds: torch.Tensor, att_groups: dict[str, list[int]], offset: int) -> dict[str, list[int]]:        
-        att_join = torch.all if self.att_join_by_and else torch.any
-        
-        for k, v in self.att_groups.items():
-            attr = torch.tensor(v, device=self.device).view(1, -1, 1, 1)
-            is_attr = (parse_preds.unsqueeze(1) == attr.abs()).sum(dim=(2, 3))
-
-            is_attr = att_join(torch.stack([
-                is_attr[:, i] > self.att_threshold if a > 0 else
-                is_attr[:, i] <= self.att_threshold
-                for i, a in enumerate(v)
-            ], dim=1), dim=1)
-
-            inds = [i + offset for i in range(len(is_attr)) if is_attr[i]]
-            att_groups[k].extend(inds)
-        
-        return att_groups
-
-    def group_by_segmentation(self, parse_preds: torch.Tensor, seg_groups: dict[str, tuple[list[int], list[np.ndarray]]], offset: int) -> dict[str, tuple[list[int], list[np.ndarray]]]:
-        for k, v in self.seg_groups.items():
-            attr = torch.tensor(v, device=self.device).view(1, -1, 1, 1)
-            mask = (parse_preds.unsqueeze(1) == attr).any(dim=1)
-
-            inds = [i for i in range(len(mask)) if mask[i].sum() > 5]
-            masks = mask[inds].mul(255).cpu().numpy().astype(np.uint8)
-
-            seg_groups[k][0].extend([i + offset for i in inds])
-            seg_groups[k][1].extend(masks.tolist())
-
-        return seg_groups
-    
-    def parse(self, images: torch.Tensor):
-        if self.par_model is None:
-            return None, None
-        
-        images = torch.from_numpy(images).permute(0, 3, 1, 2).float().to(self.device)
-        att_groups, seg_groups, offset = None, None, 0
-
-        if self.att_groups is not None:
-            att_groups = {k: [] for k in self.att_groups.keys()}
-        
-        if self.seg_groups is not None:
-            seg_groups = {k: ([], []) for k in self.seg_groups.keys()}
-
-        for sub_batch in torch.split(images, self.batch_size):
-            out = self.par_model.predict(sub_batch.to(self.device))
-
-            if self.att_groups is not None:
-                att_groups = self.group_by_attributes(out, att_groups, offset)
-            
-            if self.seg_groups is not None:
-                seg_groups = self.group_by_segmentation(out, seg_groups, offset)
-            
-            offset += len(sub_batch)
-        
-        if seg_groups is not None:
-            seg_groups = {k: v for k, v in seg_groups.items() if len(v[1]) > 0}
-            for k, v in seg_groups.items():
-                seg_groups[k] = (v[0], np.stack(v[1]))
-        
-        return att_groups, seg_groups
-    
     def save_group(
         self,
         faces: np.ndarray,
         file_names: list[str],
-        output_dir: str
+        output_dir: str,
     ):
+        # Create output directory, name counts
         os.makedirs(output_dir, exist_ok=True)
         file_name_counts = defaultdict(lambda: -1)
 
         for face, file_name in zip(faces, file_names):
+            # Split each filename to base name, ext
             name, ext = os.path.splitext(file_name)
-            ext = ext if self.format is None else '.' + self.format
+
+            if self.output_format is not None:
+                # If specific img format given
+                ext = '.' + self.output_format
 
             if self.det_model.strategy == "all":
+                # Attach numbering to filenames
                 file_name_counts[file_name] += 1
                 name += f"_{file_name_counts[file_name]}"
             
             if face.ndim == 3:
+                # If it's a colored img (not a mask), to BGR
                 face = cv2.cvtColor(face, cv2.COLOR_RGB2BGR)
 
+            # Make image path based on file format and save
             file_path = os.path.join(output_dir, name + ext)
             cv2.imwrite(file_path, face)
     
@@ -438,7 +366,7 @@ class Cropper():
     def process_batch(self, file_names: list[str], input_dir: str, output_dir: str):
         file_paths = [os.path.join(input_dir, file) for file in file_names]
         # images, paddings = load_images_as_batch(file_paths, self.mean_size)
-        images, scales, paddings = create_batch_from_img_path_list(file_paths, size=self.det_resize_size)
+        images, scales, paddings = create_batch_from_img_path_list(file_paths, size=self.resize_size)
         paddings = paddings.numpy()
 
         images = images.permute(0, 3, 1, 2).float().to(self.device)
@@ -461,7 +389,14 @@ class Cropper():
         faces = self.crop_align(images, paddings, indices, src, tgt)
         
         file_names = np.array(file_names)[indices]
-        self.save_groups(faces, file_names, output_dir, *self.parse(faces))
+
+        if self.par_model is None:
+            groups = None, None
+        else:
+            x = torch.from_numpy(faces).permute(0, 3, 1, 2).float()
+            groups = self.par_model.predict(x.to(self.device))
+
+        self.save_groups(faces, file_names, output_dir, *groups)
 
     
     def process_dir(self, input_dir: str, output_dir: str | None = None):
@@ -488,5 +423,11 @@ class Cropper():
 
 
 if __name__ == "__main__":
-    cropper = Cropper(strategy="all", det_backbone="resnet50", det_resize_size=1024, device="cuda:0", face_factor=0.55)
+    attr_groups = {"glasses": [6], "earings": [9], "neckless": [15], "hat": [18], "no_accessuaries": [-6, -9, -15, -18]}
+    mask_groups = {"eyes_and_eyebrows": [2, 3, 4, 5], "lip_and_mouth": [11, 12, 13], "nose": [10]}
+    # attr_groups = None
+    # mask_groups = None
+    
+
+    cropper = Cropper(strategy="all", resize_size=1024, device="cuda:0", face_factor=0.55, attr_groups=attr_groups, mask_groups=mask_groups)
     cropper.process_dir("ddemo2")
