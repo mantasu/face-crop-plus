@@ -1,13 +1,14 @@
 import torch
+import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.models as models
-import torchvision.models._utils as utils
+import torchvision.models._utils as _utils
 from ._layers import LoadMixin, PriorBox, SSH, FPN, Head
 
 
 class RetinaFace(nn.Module, LoadMixin):
-    """RetinaFace face detector and 5-point landmark detector.
+    """RetinaFace face detector and 5-point landmark predictor.
 
     This class is capable of predicting 5-point landmarks from a batch 
     of images and filter them based on strategy, e.g., "all landmarks in 
@@ -45,16 +46,16 @@ class RetinaFace(nn.Module, LoadMixin):
 
         First it assigns the passed values as attributes. Be default,
         it also initializes the following variables which can be changed
-        after initializing the class (but, typically, should not be
+        after initialization of the class (but, typically, should not be
         changed):
             * `nms_threshold` (float): The threshold, based on which 
-                multiple bounding box or landmark predictions for the
-                same face are merged into one. Defaults to 0.4.
-            * `variance` (list[int]): The variance of the bounding 
-                boxes used to undo the encoding of coordinates of raw 
-                bounding box and landmark predictions.
+              multiple bounding box or landmark predictions for the same 
+              face are merged into one. Defaults to 0.4.
+            * `variance` (list[int]): The variance of the bounding boxes 
+              used to undo the encoding of coordinates of raw  bounding 
+              box and landmark predictions.
         
-        Then this method initialized ResNet-50 backbone and further 
+        Then this method initializes ResNet-50 backbone and further 
         layers required for face detection and bbox/landm predictions.
 
         Args:
@@ -64,10 +65,10 @@ class RetinaFace(nn.Module, LoadMixin):
                     * 'all' - landmarks for all faces per single image
                       (single batch entry) will be considered.
                     * 'best' - landmarks for a single face with the
-                       highest confidence score per image will be
-                       considered.
+                      highest confidence score per image will be 
+                      considered.
                     * 'largest' - landmarks for a single largest face
-                       per image will be considered.
+                      per image will be considered.
                 The most efficient option is 'best' and the least
                 efficient is 'largest'. Defaults to "all".
             vis: The visual threshold, i.e., minimum confidence score,
@@ -95,7 +96,7 @@ class RetinaFace(nn.Module, LoadMixin):
         return_layers = {'layer2': 1, 'layer3': 2, 'layer4': 3}
 
         # Construct the backbone by retrieving intermediate layers
-        self.body = utils.IntermediateLayerGetter(backbone, return_layers)
+        self.body = _utils.IntermediateLayerGetter(backbone, return_layers)
 
         # Construct sub-layers to extract features for heads
         self.fpn = FPN(in_channels_list, out_channels)
@@ -110,15 +111,15 @@ class RetinaFace(nn.Module, LoadMixin):
 
     def forward(
         self,
-        x: torch.Tensor
+        x: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Performs forward pass.
 
         Takes an input batch and performs inference based on the modules 
-        of this module class. Returns an unfiltered tuple of scores,
-        bounding boxes and landmarks for all the possible detected
-        faces. The predictions are encoded to comfortably compute the 
-        loss during training and thus should be decoded to coordinates.
+        it has. Returns an unfiltered tuple of scores, bounding boxes 
+        and landmarks for all the possible detected faces. The 
+        predictions are encoded to comfortably compute the loss during 
+        training and thus should be decoded to coordinates.
 
         Args:
             x: The input tensor of shape (N, 3, H, W).
@@ -145,7 +146,7 @@ class RetinaFace(nn.Module, LoadMixin):
     def decode_bboxes(
         self,
         loc: torch.Tensor,
-        priors: torch.Tensor
+        priors: torch.Tensor,
     ) -> torch.Tensor:
         """Decodes bounding boxes from predictions.
 
@@ -406,7 +407,7 @@ class RetinaFace(nn.Module, LoadMixin):
         return landmarks, indices
     
     @torch.no_grad()
-    def predict(self, images: torch.Tensor) -> tuple[torch.Tensor, list[int]]:
+    def predict(self, images: torch.Tensor) -> tuple[np.ndarray, list[int]]:
         """Predict the sets of landmarks from the image batch.
 
         This method takes a batch of images, detect all visible faces, 
@@ -417,7 +418,11 @@ class RetinaFace(nn.Module, LoadMixin):
         indices that map each set to a specific image where the face was 
         originally detected.
         
-        The predicted sets of landmarks are 5-point coordinates:
+        The predicted sets of landmarks are 5-point coordinates (they  
+        are specified from an observer's viewpoint, meaning that, for 
+        instance, left eye is the eye on the left hand-side of the image 
+        rather than the left eye from the person's to whom the eye 
+        belongs perspective):
             1. (x1, y1) - coordinate of the left eye
             2. (x2, y2) - coordinate of the right eye
             3. (x3, y3) - coordinate of the nose tip
@@ -425,11 +430,7 @@ class RetinaFace(nn.Module, LoadMixin):
             5. (x5, y5) - coordinate of the right mouth corner
         
         The coordinates are with respect to the sizes of the images 
-        (typically padded) provided as an input to this method. Also, 
-        coordinates are specified from observer's viewpoint, meaning 
-        that, for instance, left eye is the eye on the left hand-side of 
-        the image rather than the left eye from the person's to whom the 
-        eye belongs perspective.
+        (typically padded) provided as an input to this method.
 
         Args:
             images: Image batch of shape (N, 3, H, W) in RGB form with 
@@ -437,7 +438,7 @@ class RetinaFace(nn.Module, LoadMixin):
                 device as this model.
 
         Returns:
-            A tuple where the first element is torch tensor of shape 
+            A tuple where the first element is a numpy array of shape 
             (num_faces, 5, 2) representing the selected sets of 
             landmark coordinates and the second element is a list of
             corresponding indices mapping each face to an image it comes
@@ -462,6 +463,6 @@ class RetinaFace(nn.Module, LoadMixin):
         landmarks, indices = self.take_by_strategy(*filtered)
 
         # Stack landmarks across batch dim and reshape as coords
-        landmarks = landmarks.view(-1, 5, 2).cpu()
+        landmarks = landmarks.view(-1, 5, 2).cpu().numpy()
 
         return landmarks, indices

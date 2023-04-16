@@ -1,3 +1,4 @@
+import os
 import cv2
 import json
 import torch
@@ -59,11 +60,17 @@ def get_landmark_indices_5(num_landmarks: int) -> dict[str, int | slice]:
 
     return [slice(*x) for x in indices]
 
+def as_numpy(img_tensor: torch.Tensor) -> np.ndarray:
+    return img_tensor.permute(0, 2, 3, 1).cpu().numpy().astype(np.uint8)
 
-def create_batch_from_img_path_list(
-    path_list: list[str],
-    padding_mode: str = "constant",
+def as_tensor(img_numpy: np.ndarray, device: str | torch.device = "cpu") -> torch.Tensor:
+    return torch.from_numpy(img_numpy).permute(0, 3, 1, 2).float().to(device)
+
+def create_batch_from_files(
+    file_names: list[str],
+    input_dir: str,
     size: int | tuple[int, int] = 512,
+    padding_mode: str = "constant",
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Creates image batch from a list of image paths
 
@@ -93,15 +100,19 @@ def create_batch_from_img_path_list(
             height. Defaults to 512.
 
     Returns:
-        tuple: A tuple of stacked torch tensors representing 3 batches - 
-            a resized + padded images, unscale factor, applied padding.
+        tuple: A tuple of stacked numpy arrays representing 3 batches - 
+            resized + padded images of shape (N, H, W, 3) of type 
+            np.uint8 with values from 0 to 255, unscale factors of 
+            shape (N,) of type np.float32, and applied paddings of shape 
+            (N, 4) of type np.int64 with values >= 0.
     """
     # Init lists, resize dims, border type
     images, unscales, paddings = [], [], []
     size = (size, size) if isinstance(size, int) else size
     border_type = getattr(cv2, f"BORDER_{padding_mode.upper()}")
+    file_paths = [os.path.join(input_dir, file) for file in file_names]
 
-    for path in path_list:
+    for path in file_paths:
         # Read the image from the given path, convert to RGB form
         image = cv2.cvtColor(cv2.imread(path), cv2.COLOR_BGR2RGB)
     
@@ -124,9 +135,9 @@ def create_batch_from_img_path_list(
         image = cv2.resize(image, (ww, hh), interpolation=interpolation)
         image = cv2.copyMakeBorder(image, *padding, borderType=border_type)
 
-        # Add images, unscale, padding to lists
-        images.append(torch.from_numpy(image))
-        unscales.append(torch.tensor(unscale))
-        paddings.append(torch.tensor(padding))
+        # Append to lists
+        images.append(image)
+        unscales.append(np.array(unscale))
+        paddings.append(np.array(padding))
 
-    return torch.stack(images), torch.stack(unscales), torch.stack(paddings)
+    return np.stack(images), np.stack(unscales), np.stack(paddings)

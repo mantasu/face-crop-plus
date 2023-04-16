@@ -14,11 +14,9 @@ from models.rrdb import RRDBNet
 from models.retinaface import RetinaFace
 
 
-from utils import parse_landmarks_file, get_landmark_indices_5, STANDARD_LANDMARKS_5, create_batch_from_img_path_list
+from utils import parse_landmarks_file, get_landmark_indices_5, STANDARD_LANDMARKS_5, create_batch_from_files, as_numpy, as_tensor
 
 class Cropper():
-    # [eye_g, ear_r, neck_l, hat] == [6, 9, 15, 18]
-
     def __init__(
         self,
         output_size: int | tuple[int, int] = 256,
@@ -56,8 +54,6 @@ class Cropper():
 
         # Default parameters
         self.num_std_landmarks = 5
-        self.att_join_by_and = True
-        self.attr_threshold = 5
 
         if isinstance(self.output_size, int):
             self.output_size = (self.output_size, self.output_size)
@@ -79,7 +75,7 @@ class Cropper():
         self.enh_model = None
         self.par_model = None
 
-        if self.det_threshold is not None:
+        if self.det_threshold is not None and self.landmarks is None:
             # If detection threshold is set, we will predict landmarks
             self.det_model = RetinaFace(self.strategy, self.det_threshold)
             self.det_model.load(device=self.device)
@@ -91,9 +87,41 @@ class Cropper():
         
         if self.attr_groups is not None or self.mask_groups is not None:
             # If grouping by attributes or masks is set, use parse model
-            self.par_model = BiSeNet(self.attr_groups, self.mask_groups)
+            args = (self.attr_groups, self.mask_groups, self.batch_size)
+            self.par_model = BiSeNet(*args)
             self.par_model.load(device=self.device)
     
+    def generate_source_and_target_landmarks(
+        self,
+        landmarks: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        # Num STD landmarks cannot exceed the actual number of landmarks
+        num_std_landmarks = min(landmarks.shape[1], self.num_std_landmarks)
+
+        match num_std_landmarks:
+            case 5:
+                # If the number of standard lms is 5
+                std_landmarks = STANDARD_LANDMARKS_5
+                slices = get_landmark_indices_5(landmarks.shape[1])
+            case _:
+                # Otherwise the number of STD landmarks is not supported
+                raise ValueError(f"Unsupported number of standard landmarks "
+                                 f"for estimating alignment transform matrix: "
+                                 f"{num_std_landmarks}.")
+        
+        # Compute the mean landmark coordinates from retrieved slices
+        landmarks = np.stack([landmarks[:, s].mean(1) for s in slices], axis=1)
+        
+        # Apply appropriate scaling based on face factor and out size
+        std_landmarks[:, 0] *= self.output_size[0] * self.face_factor
+        std_landmarks[:, 1] *= self.output_size[1] * self.face_factor
+
+        # Add an offset to standard landmarks to center the cropped face
+        std_landmarks[:, 0] += (1 - self.face_factor) * self.output_size[0] / 2
+        std_landmarks[:, 1] += (1 - self.face_factor) * self.output_size[1] / 2
+
+        return landmarks, std_landmarks
+
     def crop_align(
         self,
         images: np.ndarray,
@@ -138,60 +166,6 @@ class Cropper():
             ))
         
         return np.stack(transformed_images)
-    
-    def generate_source_and_target_landmarks(
-        self,
-        landmarks: np.ndarray
-    ) -> tuple[np.ndarray, np.ndarray]:
-        # Num STD landmarks cannot exceed the actual number of landmarks
-        num_std_landmarks = min(landmarks.shape[1], self.num_std_landmarks)
-
-        match num_std_landmarks:
-            case 5:
-                # If the number of standard lms is 5
-                std_landmarks = STANDARD_LANDMARKS_5
-                slices = get_landmark_indices_5(landmarks.shape[1])
-            case _:
-                # Otherwise the number of STD landmarks is not supported
-                raise ValueError(f"Unsupported number of standard landmarks "
-                                 f"for estimating alignment transform matrix: "
-                                 f"{num_std_landmarks}.")
-        
-        # Compute the mean landmark coordinates from retrieved slices
-        landmarks = np.stack([landmarks[:, s].mean(1) for s in slices], axis=1)
-        
-        # Apply appropriate scaling based on face factor and out size
-        std_landmarks[:, 0] *= self.output_size[0] * self.face_factor
-        std_landmarks[:, 1] *= self.output_size[1] * self.face_factor
-
-        # Add an offset to standard landmarks to center the cropped face
-        std_landmarks[:, 0] += (1 - self.face_factor) * self.output_size[0] / 2
-        std_landmarks[:, 1] += (1 - self.face_factor) * self.output_size[1] / 2
-
-        return landmarks, std_landmarks
-    
-    def enhance_quality(self, images: torch.Tensor, landmarks: np.ndarray, indices: list[int]) -> torch.Tensor:
-        if self.enh_model is None:
-            return images
-        
-        indices = np.array(indices)
-
-        for i in range(len(images)):
-            # Select faces for curr sample
-            faces = landmarks[indices == i]
-
-            if len(faces) == 0:
-                continue
-            
-            # Compute relative face factor
-            [w, h] = (faces[:, 4] - faces[:, 0]).T
-            face_factor = w * h / (images.shape[2] * images.shape[3])
-
-            if face_factor.mean() < self.enh_threshold:
-                # Enhance curr image if face factor below threshold
-                images[i:i+1] = self.enh_model.predict(images[i:i+1])
-
-        return images
     
     def save_group(
         self,
@@ -363,41 +337,72 @@ class Cropper():
                     masks = masks[[mask_indices.index(i) for i in group_idx]]
                     self.save_group(masks, file_name_group, group_dir)
 
-    def process_batch(self, file_names: list[str], input_dir: str, output_dir: str):
-        file_paths = [os.path.join(input_dir, file) for file in file_names]
-        # images, paddings = load_images_as_batch(file_paths, self.mean_size)
-        images, scales, paddings = create_batch_from_img_path_list(file_paths, size=self.resize_size)
-        paddings = paddings.numpy()
+    def process_batch(self, file_names: list[str], in_dir: str, out_dir: str):
+        """Extracts faces from a batch of images and saves them.
 
-        images = images.permute(0, 3, 1, 2).float().to(self.device)
+        Takes file names, input directory, reads images and extracts 
+        faces and saves them to the output directory. This method works 
+        as follows:
+            1. Batch generation - a batch of images form the given file 
+               names is generated. Each images is padded an resized to
+               `self.resize_size` while keeping the same aspect ratio.
+            2. Landmark detection - detection model is used to predict 5 
+               landmarks for each face in each image, unless the 
+               landmarks were already initialized  or face alignment + 
+               cropping is not needed.
+            3. Image enhancement - some images are enhanced if the faces 
+               compared with the image size are small. If landmarks are 
+               None, i.e., if no alignment + cropping was desired, all 
+               images are enhanced. Enhancement is not done if 
+               `self.enh_threshold` is None.
+            3. Image grouping - each face image is parsed, i.e., a map 
+               of face attributes is generated. Based on those 
+               attributes, each face image is put to a corresponding 
+               group. There may also be mask groups, in which case masks 
+               for each image in that group are also generated. Faces 
+               are not parsed if `self.attr_groups` and 
+               `self.mask_groups` are both None.
+            4. Image saving - each face image (and a potential mask) is 
+               saved according to the group structure (if there is any).
+
+        Args:
+            file_names (list[str]): _description_
+            in_dir (str): _description_
+            out_dir (str): _description_
+        """
+        # Create a batch of images (that contain faces) + their paddings
+        b = create_batch_from_files(file_names, in_dir, self.resize_size)
+        images, paddings = as_tensor(b[0], self.device), b[2]
+        indices, landmarks, groups = None, None, (None, None)
 
         if self.det_model is not None:
-            # If landmarks were not given, predict them
-            landmarks, indices = self.det_model.predict(images)            
-            landmarks = landmarks.numpy()
+            # If landmarks were not given, predict, undo padding
+            landmarks, indices = self.det_model.predict(images)
             landmarks -= paddings[indices][:, None, [2, 0]]
         elif self.landmarks is not None:
             # Generate indices for landmarks to take, then get landmarks
             indices = np.where(np.isin(self.landmarks[0], file_names))[0]
             landmarks = self.landmarks[1][indices]
 
-        images = self.enhance_quality(images, landmarks, indices)
-        images = images.permute(0, 2, 3, 1).cpu().numpy().astype(np.uint8)
+        if self.enh_model is not None:
+            # Enhance images based on how much area the faces take
+            images = self.enh_model.predict(images, landmarks, indices)
 
-        # Generate source, target landmarks, estimate & apply transform
-        src, tgt = self.generate_source_and_target_landmarks(landmarks)
-        faces = self.crop_align(images, paddings, indices, src, tgt)
-        
+        # Convert to numpy images
+        images = as_numpy(images)
+
+        if landmarks is not None:    
+            # Generate source, target landmarks, estimate & apply transform
+            src, tgt = self.generate_source_and_target_landmarks(landmarks)
+            faces = self.crop_align(images, paddings, indices, src, tgt)
+
+        if self.par_model is not None:
+            # Predict attribute and mask groups if face parsing desired
+            groups = self.par_model.predict(as_tensor(faces, self.device))
+
+        # Pick file names for each face, save faces
         file_names = np.array(file_names)[indices]
-
-        if self.par_model is None:
-            groups = None, None
-        else:
-            x = torch.from_numpy(faces).permute(0, 3, 1, 2).float()
-            groups = self.par_model.predict(x.to(self.device))
-
-        self.save_groups(faces, file_names, output_dir, *groups)
-
+        self.save_groups(faces, file_names, out_dir, *groups)
     
     def process_dir(self, input_dir: str, output_dir: str | None = None):
         if output_dir is None:
@@ -424,7 +429,7 @@ class Cropper():
 
 if __name__ == "__main__":
     attr_groups = {"glasses": [6], "earings": [9], "neckless": [15], "hat": [18], "no_accessuaries": [-6, -9, -15, -18]}
-    mask_groups = {"eyes_and_eyebrows": [2, 3, 4, 5], "lip_and_mouth": [11, 12, 13], "nose": [10]}
+    mask_groups = {"eyes_and_eyebrows": [2, 4], "lip_and_mouth": [11, 12, 13], "nose": [10]}
     # attr_groups = None
     # mask_groups = None
     
