@@ -5,6 +5,7 @@ import torch
 import numpy as np
 import torch.nn.functional as F
 
+from functools import partial
 from collections import defaultdict
 from multiprocessing import cpu_count
 from multiprocessing.pool import ThreadPool
@@ -14,9 +15,20 @@ from models.rrdb import RRDBNet
 from models.retinaface import RetinaFace
 
 
-from utils import parse_landmarks_file, get_landmark_indices_5, STANDARD_LANDMARKS_5, create_batch_from_files, as_numpy, as_tensor
+from utils import parse_landmarks_file, get_ldm_slices, STANDARD_LANDMARKS_5, create_batch_from_files, as_numpy, as_tensor
 
 class Cropper():
+    """
+    TODO: num_cpus, process_dir documentation, examples, rrdb predict type
+
+    Attributes:
+        landmarks_target (np.ndarray): Standard normalized landmarks of 
+            shape  (`self.num_std_landmarks`, 2). These are scaled by 
+            `self.face_factor` and used as ideal landmark coordinates 
+            for the extracted faces. In other words, they are reference 
+            landmarks used to estimate the transformation of an image 
+            based on some actual set of face landmarks for that image.
+    """
     def __init__(
         self,
         output_size: int | tuple[int, int] = 256,
@@ -25,16 +37,154 @@ class Cropper():
         face_factor: float = 0.65,
         strategy: str = "largest",
         padding: str = "reflect",
-        is_partial: bool = True,
+        allow_skew: bool = False,
         landmarks: str | tuple[np.ndarray, np.ndarray] | None = None,
         attr_groups: dict[str, list[int]] | None = None,
         mask_groups: dict[str, list[int]] | None = None,
         det_threshold: float | None = 0.6,
         enh_threshold: float | None = 0.001,
         batch_size: int = 8,
-        num_cpus: int = cpu_count(),
+        num_processes: int = cpu_count(),
         device: str | torch.device = "cpu",
     ):
+        """Initializes the cropper.
+
+        Initializes class attributes. 
+
+        Args:
+            output_size: The output size (width, height) of cropped 
+                image faces. If provided as a single number, the same 
+                value is used for both width and height. Defaults to
+                256.
+            output_format: The output format of the saved face images. 
+                For available options, see 
+                <https://docs.opencv.org/4.x/d4/da8/group__imgcodecs.html#ga288b8b3da0892bd651fce07b3bbd3a56>. 
+                If not specified, then the same image extension will not 
+                be changed, i.e., face images will be of the same format 
+                as the images from which they are extracted. Defaults to 
+                None.
+            resize_size: The interim size (width, height) each image 
+                should be resized to before processing images. This is 
+                used to resize images to a common size to allow to make 
+                a batch. It should ideally be the mean width and height 
+                of all the images to be processed (but can simply be a
+                square). Images will be resized to to the specified size 
+                while maintaining the aspect ratio (one of the 
+                dimensions will always match either the specified width 
+                or height). The shorter dimension would afterwards be 
+                padded - for more information on how it works, see 
+                :py:func:`~utils.create_batch_from_files`. Defaults to 
+                1024.
+            face_factor: The fraction of the face area relative to the 
+                output image. Defaults to 0.65.
+            strategy: The strategy to use to extract faces from each 
+                image. The available options are:
+                    * "all" - all faces will be extracted form each 
+                      image.
+                    * "best" - one face with the largest confidence 
+                       score will be extracted from each image.
+                    * "largest" - one face with the largest face area 
+                       will be extracted from each image.
+                For more info, see :py:meth:`~RetinaFace.__init__`. 
+                Defaults to "largest".
+            padding: The padding type (border mode) to apply when 
+                cropping out faces. If faces are near edge, some part of 
+                the resulting center-cropped face image may be blank, in 
+                which case it can be padded with specific values. For 
+                available options, see 
+                <https://docs.opencv.org/3.4/d2/de8/group__core__array.html#ga209f2f4869e304c82d07739337eae7c5>. 
+                If specified as "constant", the value of 0 will be used. 
+                Defaults to "reflect".
+            allow_skew: Whether to allow skewing when aligning the face 
+                according to its landmarks. If True, then facial points 
+                will be matched very closely to the ideal standard 
+                landmark points (which is a set of reference points 
+                created internally when preforming the transformation). 
+                If all faces face forward, i.e., in portrait-like 
+                manner, then this could be set to True which results in 
+                minimal perspective changes. However, most of the time 
+                this should be set to False to preserve the face 
+                perspective. For more details, see 
+                :py:meth:`~Cropper.crop_align`. Defaults to False.
+            landmarks: If landmarks are already known, they should be 
+                specified via this variable. If specified, landmark 
+                estimation will not be performed. There are 2 ways to 
+                specify landmarks:
+                    1. As a path to landmarks file, in which case str 
+                       should be provided. The specified file should 
+                       contain file (image) names and corresponding 
+                       landmark coordinates. Duplicate file names are 
+                       allowed (in case multiple faces are present in 
+                       the same image). For instance, it could be 
+                       .txt file where each row contains space-separated 
+                       values: the first value is the file name and the 
+                       other 136 values represent landmark coordinates 
+                       in x1, y1, x2, y2, ... format. For more details 
+                       about the possible file formats and how they are 
+                       parsed, see 
+                       :py:func:`~utils.parse_landmarks_file`.
+                    2. As a tuple of 2 numpy arrays. The first one is of 
+                       shape (num_faces, num_landm, 2) of type 
+                       np.float32 and represents the landmarks of every
+                       face that is going to be extracted from images. 
+                       The second is a numpy array of shape (num_faces,) 
+                       of type 'U' (numpy string type) where each value 
+                       specifies a file name to which a corresponding 
+                       set of landmarks belongs. 
+                If not specified, 5 landmark coordinates will be 
+                estimated for each face automatically. Defaults to None.
+            attr_groups: Attribute groups dictionary that specifies how
+                to group the output face images according to some common
+                attributes. The keys are names describing some common
+                attribute, e.g., "glasses", "no_accessories" and the 
+                values specify which attribute indices belong (or don't 
+                belong, if negative) to that group, e.g., [6], 
+                [-6, -9, -15]. For more information, see 
+                :py:class:`~BiSeNet` and :py:meth:`Cropper.save_groups`. 
+                If not provided, output images will not be grouped by 
+                attributes and no attribute sub-folders will be created
+                in the desired output directory. Defaults to None.
+            mask_groups: Mask groups dictionary that specifies how to 
+                group the output face images according to some face
+                attributes that make up a segmentation mask. The keys 
+                are mask type names, e.g., "eyes", and the values 
+                specify which attribute indices should be considered for 
+                that mask, e.g., [4, 5]. For every group, not only face 
+                images will be saved in a corresponding sub-directory, 
+                but also black and white face attribute masks (white 
+                pixels indicating the presence of a mask attribute). For 
+                more details, see For more info, see 
+                :py:class:`~BiSeNet` and :py:meth:`Cropper.save_groups`.
+                If not provided, no grouping is applied. Defaults to 
+                None.
+            det_threshold: The visual threshold, i.e., minimum 
+                confidence score, for a detected face to be considered 
+                an actual face. See :py:meth:`~RetinaFace.__init__` for 
+                more details. If None, no face detection will be 
+                performed. Defaults to 0.6.
+            enh_threshold: Quality enhancement threshold that tells when 
+                the image quality should be enhanced (it is an expensive 
+                operation). It is the minimum average face factor, i.e., 
+                face area relative to the image, below which the whole 
+                image is enhanced. Defaults to 0.001.
+            batch_size: The batch size. It is the maximum number of 
+                images that can be processed by every processor at a 
+                single time-step. Large values may result in memory 
+                errors, especially, when GPU acceleration is used. 
+                Increase this if less models (i.e., landmark detection, 
+                quality enhancement, face parsing models) are used and 
+                decrease otherwise. Defaults to 8.
+            num_processes: The number of processes to launch to perform 
+                image processing. Each process works in parallel on 
+                multiple threads, significantly increasing the 
+                performance speed. Increase if less prediction models 
+                are used and increase otherwise. Defaults to cpu_count().
+            device: The device on which to perform the predictions, 
+                i.e., landmark detection, quality enhancement and face 
+                parsing. If landmarks are provided, no enhancement and 
+                no parsing is desired, then this has no effect. Defaults
+                to "cpu".
+        """
         # Init specified attributes
         self.output_size = output_size
         self.output_format = output_format
@@ -42,17 +192,17 @@ class Cropper():
         self.face_factor = face_factor
         self.strategy = strategy
         self.padding = padding
-        self.is_partial = is_partial
+        self.allow_skew = allow_skew
         self.landmarks = landmarks
         self.attr_groups = attr_groups
         self.mask_groups = mask_groups
         self.det_threshold = det_threshold
         self.enh_threshold = enh_threshold
         self.batch_size = batch_size
-        self.num_cpus = num_cpus
+        self.num_processes = num_processes
         self.device = device
 
-        # Default parameters
+        # The only option for STD
         self.num_std_landmarks = 5
 
         if isinstance(self.output_size, int):
@@ -67,9 +217,30 @@ class Cropper():
         if isinstance(self.landmarks, str):
             self.landmarks = parse_landmarks_file(self.landmarks)
 
+        # Further attributes
         self._init_models()
+        self._init_landmarks_target()
     
     def _init_models(self):
+        """Initializes detection, enhancement and parsing models.
+
+        The method initializes 3 models:
+            1. If `self.det_threshold` is provided and no landmarks are 
+               known in advance, the detection model is initialized to 
+               estimate 5-point landmark coordinates. For more info, see 
+               :py:class:`~RetinaFace`.
+            2. If `self.enh_threshold` is provided, the quality 
+               enhancement model is initialized. For more info, see
+               :py:class:`~RRDBNet`.
+            3. If `self.attr_groups` or `self.mask_groups` is provided,
+               then face parsing model is initialized. For more info, 
+               see :py:class:`~BiSeNet`.
+        
+        Note:
+            This is a useful initializer function if multiprocessing is 
+            used, in which case copies of all the models can be created 
+            on separate cores.
+        """
         # Init models as None
         self.det_model = None
         self.enh_model = None
@@ -91,26 +262,16 @@ class Cropper():
             self.par_model = BiSeNet(*args)
             self.par_model.load(device=self.device)
     
-    def generate_source_and_target_landmarks(
-        self,
-        landmarks: np.ndarray,
-    ) -> tuple[np.ndarray, np.ndarray]:
-        # Num STD landmarks cannot exceed the actual number of landmarks
-        num_std_landmarks = min(landmarks.shape[1], self.num_std_landmarks)
-
-        match num_std_landmarks:
+    def _init_landmarks_target(self):
+        match self.num_std_landmarks:
             case 5:
-                # If the number of standard lms is 5
+                # If the number of std landmarks is 5
                 std_landmarks = STANDARD_LANDMARKS_5
-                slices = get_landmark_indices_5(landmarks.shape[1])
             case _:
                 # Otherwise the number of STD landmarks is not supported
                 raise ValueError(f"Unsupported number of standard landmarks "
                                  f"for estimating alignment transform matrix: "
-                                 f"{num_std_landmarks}.")
-        
-        # Compute the mean landmark coordinates from retrieved slices
-        landmarks = np.stack([landmarks[:, s].mean(1) for s in slices], axis=1)
+                                 f"{self.num_std_landmarks}.")
         
         # Apply appropriate scaling based on face factor and out size
         std_landmarks[:, 0] *= self.output_size[0] * self.face_factor
@@ -120,52 +281,184 @@ class Cropper():
         std_landmarks[:, 0] += (1 - self.face_factor) * self.output_size[0] / 2
         std_landmarks[:, 1] += (1 - self.face_factor) * self.output_size[1] / 2
 
-        return landmarks, std_landmarks
+        # Pass STD landmarks as target landms
+        self.landmarks_target = std_landmarks
+    
+    # def generate_source_and_target_landmarks(
+    #     self,
+    #     landmarks: np.ndarray,
+    # ) -> tuple[np.ndarray, np.ndarray]:
+    #     """Generates source and target landmarks to estimate transforms.
+
+    #     Takes a batch of landmarks and selects `self.num_std_landmarks` 
+    #     from each set of landmarks of that batch to make source 
+    #     landmarks. It also generates a set of standard (ideal/reference) 
+    #     landmarks with `self.num_std_landmarks` coordinates. The 
+    #     landmarks in both source and target variables semantically 
+    #     match, e.g., the left eye coordinate in target landmarks also 
+    #     corresponds to  the left eye coordinate in source landmarks.
+    #     These 2 landmark variables are used to estimate transformations 
+    #     of images - each image to which a set of landmarks (from source 
+    #     landmarks batch) belongs is transformed such that the area 
+    #     covers the those landmarks as the standard (target) landmarks 
+    #     set (as ideally as possible).
+
+    #     Args:
+    #         landmarks: Landmarks batch of type np.float32 with values 
+    #             between (0, 0) and `self.resize_size` (although they can 
+    #             be slightly out of bounds for faces at the edge of the 
+    #             images) of shape (num_faces, num_landm, 2).
+
+    #     Raises:
+    #         ValueError: If the number of standard landmarks is not 
+    #             supported. The number of standard landmarks is 
+    #             `self.num_std_landmarks`, unless there are less 
+    #             landmark coordinates in `landmarks`, in which case that 
+    #             lower number is uses as the number of standard 
+    #             landmarks.
+
+    #     Returns:
+    #         A tuple where the first element is a batch of source 
+    #         landmarks of shape (N, `self.num_std_landmarks`, 2) and the 
+    #         second element is a set of ideal target landmarks of shape 
+    #         (`self.num_std_landmarks`, 2). Both are of type 
+    #         `np.float32`, except source landmarks have the same value 
+    #         range as input `landmarks`, whereas target landmarks are 
+    #         normalized between 0 and 1.
+    #     """
+    #     # Num STD landmarks cannot exceed the actual number of landmarks
+    #     # num_std_landmarks = min(landmarks.shape[1], self.num_std_landmarks)
+
+    #     match num_std_landmarks:
+    #         case 5:
+    #             # If the number of standard lms is 5
+    #             std_landmarks = STANDARD_LANDMARKS_5
+    #             slices = get_landmark_indices_5(landmarks.shape[1])
+    #         case _:
+    #             # Otherwise the number of STD landmarks is not supported
+    #             raise ValueError(f"Unsupported number of standard landmarks "
+    #                              f"for estimating alignment transform matrix: "
+    #                              f"{num_std_landmarks}.")
+        
+    #     # Compute the mean landmark coordinates from retrieved slices
+    #     landmarks = np.stack([landmarks[:, s].mean(1) for s in slices], axis=1)
+        
+    #     # Apply appropriate scaling based on face factor and out size
+    #     std_landmarks[:, 0] *= self.output_size[0] * self.face_factor
+    #     std_landmarks[:, 1] *= self.output_size[1] * self.face_factor
+
+    #     # Add an offset to standard landmarks to center the cropped face
+    #     std_landmarks[:, 0] += (1 - self.face_factor) * self.output_size[0] / 2
+    #     std_landmarks[:, 1] += (1 - self.face_factor) * self.output_size[1] / 2
+
+    #     return landmarks, std_landmarks
 
     def crop_align(
         self,
-        images: np.ndarray,
-        padding: np.ndarray,
+        images: np.ndarray | list[np.ndarray],
+        padding: np.ndarray | None,
         indices: list[int],
         landmarks_source: np.ndarray,
-        landmarks_target: np.ndarray,
     ) -> np.ndarray:
+        """Aligns and center-crops faces based on the given landmarks.
+
+        This method takes a batch of images (can be padded), and loops 
+        through each image (represented as a numpy array) performing the 
+        following actions:
+            1. Removes the padding.
+            2. Estimates affine transformation from source landmarks to 
+               standard landmarks.
+            3. Applies transformation to align and center-crop the face 
+               based on the face factor.
+            4. Returns a batch of face images represented as numpy 
+               arrays of the same length ans the number of sets of 
+               landmarks.
+        
+        Crucial role in this method plays `self.landmarks_target` which 
+        is the standard set of landmarks used as a reference for the 
+        source landmarks.
+
+        Note:
+            Standard, or target, landmarks refer to an average 
+            set of landmarks with ideal normalized coordinates for each 
+            facial point. The source facial points will be rotated, 
+            scaled and translated to match the standard landmarks as 
+            close as possible. If `self.allow_skew` is set to True, then 
+            facial points will also be skewed (resulting in, e.g., 
+            longer/flatter faces than in the original images).
+
+        Args:
+            images: Image batch of shape (N, H, W, 3) of type np.uint8 
+                (doesn't matter if RGB or BGR) where each nth image is 
+                transformed to extract face(-s). (H, W) should be 
+                `self.resize_size`. It can also be a list of np.uint8 
+                numpy arrays of different shapes.
+            padding: Padding of shape (N, 4) where the integer values 
+                correspond to the number of pixels padded from each 
+                side: top, bottom, left, right. Padding was originally 
+                applied to each image, e.g., to make the image square, 
+                so that all images could be stacked as a batch. 
+                Therefore, it is needed here to remove the padding. If 
+                specified as None, it is assumed that the images are 
+                un-padded.
+            indices: Indices list of length num_faces where each index 
+                specifies which image is used to extract faces for each 
+                set of landmarks in `landmarks_source`.
+            landmarks_source: Landmarks batch of shape 
+                (num_faces, `self.num_std_landmarks`, 2). These are 
+                landmark sets of all the desired faces to extract from 
+                the given batch of N images.
+
+        Returns:
+            A batch of aligned and center-cropped faces where the factor 
+            of the area of a face relative to the whole face image area
+            is `self.face_factor`. The output is a numpy array of shape 
+            (N, H, W) of type np.uint8 (same channel structure as for 
+            the input images). (H, W) is defined by `self.size`.
+        """
         # Init list, border mode
         transformed_images = []
         border_mode = getattr(cv2, f"BORDER_{self.padding.upper()}")
         
         for landmarks_idx, image_idx in enumerate(indices):
-            if self.is_partial:
-                # Preform only rotation, scaling and translation
-                transform_function = cv2.estimateAffinePartial2D
-            else:
+            if self.allow_skew:
                 # Perform full perspective transformation
                 transform_function = cv2.estimateAffine2D
+            else:
+                # Preform only rotation, scaling and translation
+                transform_function = cv2.estimateAffinePartial2D
             
             # Estimate transformation matrix to apply
             transform_matrix = transform_function(
                 landmarks_source[landmarks_idx],
-                landmarks_target,
+                self.landmarks_target,
                 ransacReprojThreshold=np.inf,
             )[0]
 
             if transform_matrix is None:
                 # Could not estimate
                 continue
-            
-            # Crop out the raw image area (without pdding)
-            img, pad = images[image_idx], padding[image_idx]
-            img = img[pad[0]:img.shape[0]-pad[1], pad[2]:img.shape[1]-pad[3]]
+
+            # Retrieve current image
+            image = images[image_idx]
+
+            if padding is not None:
+                # Crop out the un-padded area
+                [t, b, l, r] = padding[image_idx]
+                image = image[t:image.shape[0]-b, l:image.shape[1]-r]
 
             # Apply affine transformation to the image
             transformed_images.append(cv2.warpAffine(
-                img,
+                image,
                 transform_matrix,
                 self.output_size,
                 borderMode=border_mode
             ))
         
-        return np.stack(transformed_images)
+        # Normally stacking would be applied unless the list is empty
+        numpy_fn = np.stack if len(transformed_images) > 0 else np.array
+        
+        return numpy_fn(transformed_images)
     
     def save_group(
         self,
@@ -173,6 +466,32 @@ class Cropper():
         file_names: list[str],
         output_dir: str,
     ):
+        """Saves a group of images to output directory.
+
+        Takes in a batch of faces or masks as well as corresponding file 
+        names from where the faces were extracted and saves the 
+        faces/masks to a specified output directory with the same names 
+        as those image files (appends counter suffixes if multiple faces 
+        come from the same file). If the batch of face images/masks is 
+        empty, then the output directory is not created either.
+
+        Args:
+            faces: Face images (cropped and aligned) represented as a
+                numpy array of shape (N, H, W, 3) with values of type
+                np.uint8 ranging from 0 to 255. It may also be face mask 
+                of shape (N, H, W) with values of 255 where some face 
+                attribute is present and 0 elsewhere.
+            file_names: The list of filenames of length N. Each face 
+                comes from a specific file whose name is also used to 
+                save the extracted face. If `self.strategy` allows 
+                multiple faces to be extracted from the same file, such 
+                as "all", counters at the end of filenames are added.
+            output_dir: The output directory to save `faces`.
+        """
+        if len(faces) == 0:
+            # Just return
+            return
+        
         # Create output directory, name counts
         os.makedirs(output_dir, exist_ok=True)
         file_name_counts = defaultdict(lambda: -1)
@@ -185,7 +504,7 @@ class Cropper():
                 # If specific img format given
                 ext = '.' + self.output_format
 
-            if self.det_model.strategy == "all":
+            if self.strategy == "all":
                 # Attach numbering to filenames
                 file_name_counts[file_name] += 1
                 name += f"_{file_name_counts[file_name]}"
@@ -292,9 +611,9 @@ class Cropper():
                 numpy array of shape (N, H, W, 3) with values of type
                 np.uint8 ranging from 0 to 255.
             file_names: File names of images from which the faces were 
-                extracted from. This value is a numpy array of shape
-                (N,) with values of type 'U' (numpy string type). Each
-                nth face in `faces` maps to exactly one file nth name in
+                extracted. This value is a numpy array of shape (N,) 
+                with values of type 'U' (numpy string type). Each nth 
+                face in `faces` maps to exactly one file nth name in
                 this array, thus there may be duplicate file names
                 (because different faces may come from the same file).
             output_dir: The output directory where the faces or folders 
@@ -327,7 +646,7 @@ class Cropper():
                 group_dir = os.path.join(output_dir, attr_name, mask_name)
 
                 # Retrieve group values & save
-                face_group = faces[group_idx]
+                face_group = [faces[idx] for idx in group_idx]
                 file_name_group = file_names[group_idx]
                 self.save_group(face_group, file_name_group, group_dir)
 
@@ -344,7 +663,7 @@ class Cropper():
         faces and saves them to the output directory. This method works 
         as follows:
             1. Batch generation - a batch of images form the given file 
-               names is generated. Each images is padded an resized to
+               names is generated. Each images is padded and resized to
                `self.resize_size` while keeping the same aspect ratio.
             2. Landmark detection - detection model is used to predict 5 
                landmarks for each face in each image, unless the 
@@ -366,73 +685,121 @@ class Cropper():
                saved according to the group structure (if there is any).
 
         Args:
-            file_names (list[str]): _description_
-            in_dir (str): _description_
-            out_dir (str): _description_
+            file_names: The list of image file names (not full paths). 
+                All the images should be in the same directory.
+            in_dir: Path to input directory with image files.
+            out_dir: Path to output directory to save the extracted 
+                face images.
         """
-        # Create a batch of images (that contain faces) + their paddings
-        b = create_batch_from_files(file_names, in_dir, self.resize_size)
-        images, paddings = as_tensor(b[0], self.device), b[2]
-        indices, landmarks, groups = None, None, (None, None)
+        if self.landmarks is None and self.det_model is None:
+            # Initialize empty lists, landmarks and paddings as None
+            images, indices, landmarks, paddings = [], [], None, None
 
-        if self.det_model is not None:
+            for i, file_name in enumerate(file_names):
+                # Make path, load image
+                path = os.path.join(in_dir, file_name)
+                image = cv2.cvtColor(cv2.imread(path), cv2.COLOR_BGR2RGB)
+
+                # Update the lists
+                indices.append(i)
+                images.append(image)
+        elif self.landmarks is not None:
+            # Initialize empty image and index lists, set padding None
+            images, img_indices, ldm_indices, paddings = [], [], [], None
+
+            for i, file_name in enumerate(file_names):
+                # Make path, load image, check indices
+                path = os.path.join(in_dir, file_name)
+                image = cv2.cvtColor(cv2.imread(path), cv2.COLOR_BGR2RGB)
+                indices_i = np.where(file_name == self.landmarks[1])[0]
+
+                # Update the lists
+                images.append(image)
+                img_indices.extend([i] * len(indices_i))
+                ldm_indices.extend(indices_i.tolist())
+            
+            # Update indices and select landmarks
+            indices = img_indices
+            landmarks = self.landmarks[0][ldm_indices]
+        elif self.det_model is not None:
+            # Create a batch of images (with faces) and their paddings
+            b = create_batch_from_files(file_names, in_dir, self.resize_size)
+            images, paddings = as_tensor(b[0], self.device), b[2]
+
             # If landmarks were not given, predict, undo padding
             landmarks, indices = self.det_model.predict(images)
             landmarks -= paddings[indices][:, None, [2, 0]]
-        elif self.landmarks is not None:
-            # Generate indices for landmarks to take, then get landmarks
-            indices = np.where(np.isin(self.landmarks[0], file_names))[0]
-            landmarks = self.landmarks[1][indices]
+
+        if landmarks is not None and len(landmarks) == 0:
+            # Nothing to save
+            return
+            
+        if landmarks is not None and landmarks.shape[1] != self.num_std_landmarks:
+            # Compute the mean landmark coordinates from retrieved slices
+            slices = get_ldm_slices(self.num_std_landmarks, landmarks.shape[1])            
+            landmarks = np.stack([landmarks[:, s].mean(1) for s in slices], 1)
 
         if self.enh_model is not None:
-            # Enhance images based on how much area the faces take
+            # Enhance some images
+            images = as_tensor(images)
             images = self.enh_model.predict(images, landmarks, indices)
 
-        # Convert to numpy images
-        images = as_numpy(images)
+        # Convert to numpy images, initialize groups
+        images, groups = as_numpy(images), (None, None)
 
         if landmarks is not None:    
             # Generate source, target landmarks, estimate & apply transform
-            src, tgt = self.generate_source_and_target_landmarks(landmarks)
-            faces = self.crop_align(images, paddings, indices, src, tgt)
+            images = self.crop_align(images, paddings, indices, landmarks)
 
         if self.par_model is not None:
             # Predict attribute and mask groups if face parsing desired
-            groups = self.par_model.predict(as_tensor(faces, self.device))
+            groups = self.par_model.predict(as_tensor(images, self.device))
 
         # Pick file names for each face, save faces
         file_names = np.array(file_names)[indices]
-        self.save_groups(faces, file_names, out_dir, *groups)
+        self.save_groups(images, file_names, out_dir, *groups)
+        
+        # Empty cache
+        torch.cuda.empty_cache()
     
     def process_dir(self, input_dir: str, output_dir: str | None = None):
         if output_dir is None:
             # Create a default output dir name
             output_dir = input_dir + "_aligned"
-        
-        # Create the actual output directory
-        os.makedirs(output_dir, exist_ok=True)
 
         # Create batches of image file names in input dir
         files, bs = os.listdir(input_dir), self.batch_size
         file_batches = [files[i:i+bs] for i in range(0, len(files), bs)]
 
-        for i, file_batch in enumerate(file_batches):
-            print("Processing batch", i, f"[{len(file_batch)}]" )
-            self.process_batch(file_batch, input_dir, output_dir)
+        # for i, file_batch in enumerate(tqdm.tqdm(file_batches)):
+        #     # print("Processing batch", i, f"[{len(file_batch)}]" )
+        #     self.process_batch(file_batch, input_dir, output_dir)
 
-        # with ThreadPool(processes=self.num_cpus, initializer=self._init_models) as pool:
-        #     # Create imap object and apply workers to it
-        #     args = (file_batches, input_dir, output_dir)
-        #     imap = pool.imap_unordered(self.process_batch, args)
-        #     list(tqdm(imap, total=len(file_batches)))
+        # worker_fn = partial(self.process_batch)
+
+        with ThreadPool(self.num_processes, self._init_models) as pool:
+            # Create imap object and apply workers to it
+            # args = (file_batches, input_dir, output_dir)
+
+            imap = pool.imap_unordered(
+                func=partial(self.process_batch, in_dir=input_dir, out_dir=output_dir),
+                iterable=file_batches,
+            )
+
+            list(tqdm.tqdm(imap, total=len(file_batches), desc="Processing"))
 
 
 if __name__ == "__main__":
     attr_groups = {"glasses": [6], "earings": [9], "neckless": [15], "hat": [18], "no_accessuaries": [-6, -9, -15, -18]}
     mask_groups = {"eyes_and_eyebrows": [2, 4], "lip_and_mouth": [11, 12, 13], "nose": [10]}
-    # attr_groups = None
-    # mask_groups = None
-    
 
-    cropper = Cropper(strategy="all", resize_size=1024, device="cuda:0", face_factor=0.55, attr_groups=attr_groups, mask_groups=mask_groups)
-    cropper.process_dir("ddemo2")
+    kwargs = {
+        # "det_threshold": None,
+        "enh_threshold": None,
+        "attr_groups": None,
+        "mask_groups": None,
+        "num_processes": 4,
+    }
+
+    cropper = Cropper(strategy="best", resize_size=1024, device="cuda:0", **kwargs, )#landmarks="landmark.txt")
+    cropper.process_dir("img_celeba")

@@ -30,12 +30,12 @@ def parse_landmarks_file(
             kwargs.setdefault("skip_header", 1)
 
         # Use the first column for filenames, the rest for landmarks
-        filenames = np.genfromtxt(file_path, usecols=0, **kwargs)
+        filenames = np.genfromtxt(file_path, usecols=0, dtype=str, **kwargs)
         landmarks = np.genfromtxt(file_path, **kwargs)[:, 1:]
     
-    return filenames, landmarks.reshape(len(landmarks), -1, 2)
+    return landmarks.reshape(len(landmarks), -1, 2), filenames
 
-def get_landmark_indices_5(num_landmarks: int) -> dict[str, int | slice]:
+def get_landmark_slices_5(num_landmarks: int) -> dict[str, int | slice]:
     match num_landmarks:
         case 5:
             indices = [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5)]
@@ -60,18 +60,47 @@ def get_landmark_indices_5(num_landmarks: int) -> dict[str, int | slice]:
 
     return [slice(*x) for x in indices]
 
-def as_numpy(img_tensor: torch.Tensor) -> np.ndarray:
-    return img_tensor.permute(0, 2, 3, 1).cpu().numpy().astype(np.uint8)
+def get_ldm_slices(num_tgt_landmarks, num_src_landmarks):
+    match num_tgt_landmarks:
+        case 5:
+            slices = get_landmark_slices_5(num_src_landmarks)
+        case _:
+            raise ValueError(f"The number of target (standard) landmarks is "
+                             f"not supported {num_tgt_landmarks}")
+    
+    return slices
 
-def as_tensor(img_numpy: np.ndarray, device: str | torch.device = "cpu") -> torch.Tensor:
-    return torch.from_numpy(img_numpy).permute(0, 3, 1, 2).float().to(device)
+def as_numpy(
+    img: torch.Tensor | np.ndarray | list[torch.Tensor | np.ndarray],
+) -> np.ndarray | list[np.ndarray]:
+    if isinstance(img[0], np.ndarray):
+        return img
+    elif isinstance(img, list):
+        img = [x.permute(1, 2, 0).cpu().numpy().astype(np.uint8) for x in img]
+    else:
+        img = img.permute(0, 2, 3, 1).cpu().numpy().astype(np.uint8)
+
+    return img
+
+def as_tensor(
+    img: np.ndarray | torch.Tensor | list[np.ndarray | torch.Tensor],
+    device: str | torch.device = "cpu",
+) -> torch.Tensor | list[torch.Tensor]:
+    if isinstance(img[0], torch.Tensor):
+        return img
+    elif isinstance(img, list):
+        img = [torch.from_numpy(x).permute(2, 0, 1).float().to(device) for x in img]
+    else:
+        img = torch.from_numpy(img).permute(0, 3, 1, 2).float().to(device)
+    
+    return img
 
 def create_batch_from_files(
     file_names: list[str],
     input_dir: str,
     size: int | tuple[int, int] = 512,
     padding_mode: str = "constant",
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Creates image batch from a list of image paths
 
     For every image path in the given list, the image is read, resized

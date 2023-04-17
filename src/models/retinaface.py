@@ -363,6 +363,10 @@ class RetinaFace(nn.Module, LoadMixin):
             each index maps a corresponding set of landmarks (face) to 
             an image identified by that index.
         """
+        if len(idx) == 0:
+            # If no predicted landmarks, return empty lists
+            return torch.tensor([], device=landms.device), []
+        
         # Init helper variables
         landmarks, indices = [], []
         cache = {"idx": [], "bboxes": [], "landms": []}
@@ -400,7 +404,7 @@ class RetinaFace(nn.Module, LoadMixin):
             
             # Clear cache (reinitialize empty lists)
             cache = {k: [] for k in cache.keys()}
-        
+
         # Stack landmarks across batch dim
         landmarks = torch.stack(landmarks)
     
@@ -462,6 +466,7 @@ class RetinaFace(nn.Module, LoadMixin):
         filtered = self.filter_preds(scores, bboxes, landms)
         landmarks, indices = self.take_by_strategy(*filtered)
 
+        # if len(landmarks) > 0:
         # Stack landmarks across batch dim and reshape as coords
         landmarks = landmarks.view(-1, 5, 2).cpu().numpy()
 

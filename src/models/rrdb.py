@@ -87,7 +87,7 @@ class RRDBNet(nn.Module, LoadMixin):
     @torch.no_grad()
     def predict(
         self,
-        images: torch.Tensor,
+        images: torch.Tensor | list[torch.Tensor],
         landmarks: np.ndarray | None,
         indices: list[int] | None,
     ) -> torch.Tensor:
@@ -141,9 +141,9 @@ class RRDBNet(nn.Module, LoadMixin):
                 face_factor = w * h / (images.shape[2] * images.shape[3])
 
             if face_factor.mean() < self.min_face_factor:
-                # Enhance ith img if factor below thres
-                image_x4 = self(images[i:i+1].div(255))
+                # Enhance ith img if factor below threshold
+                image_x4 = self(images[i].unsqueeze(0).div(255))
                 image_x1 = F.interpolate(image_x4, None, 0.25, "bicubic")
-                images[i:i+1] = image_x1.clamp(0, 1).mul(255).round()
+                images[i] = image_x1.clamp(0, 1).mul(255).round()[0]
 
         return images
