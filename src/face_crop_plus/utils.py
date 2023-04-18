@@ -17,6 +17,46 @@ def parse_landmarks_file(
     file_path: str,
     **kwargs,
 ) -> tuple[np.ndarray, np.ndarray]:
+    """Parses landmarks file.
+
+    Reads the file containing landmark coordinates and corresponding 
+    image file names and generates a numpy array of those names and a 
+    corresponding numpy array of those sets of landmarks.
+
+    The files are expected to be formatted as follows:
+        * `.json`:
+            {
+                "image_1.jpg": [23, 45, 64, 47, ...],
+                "image_2.jpg": [17, 32, 30, 29, ...],
+                ...
+            }
+        * `.csv`:
+            images,x1,y1,x2,y2,...
+            image_1.jpg,23,45,64,47,...
+            image_2.jpg,17,32,30,29,...
+            ...
+        `.txt` and other:
+            image_1.jpg 23 45 64 47 ...
+            image_2.jpg 17 32 30 29 ...
+            ...
+    
+    Note:
+        The number of landmarks does not matter, all will be 
+        transformed to shape (-1, 2), where -1 stands for the number of 
+        facial points (landmark coordinates), e.g., 5, 68 etc.
+
+    Args:
+        file_path: The path to the landmarks file.
+        **kwargs: Additional keyword arguments that go into 
+            `np.genfromtxt`. Please do not specify _dtype_ and _usecols_ 
+            arguments as they are already specified.
+
+    Returns:
+        A tuple where the first element is the parsed landmarks batch as 
+        a numpy array of shape (N, num_landm, 2) of type np.float32 and 
+        the second element is a corresponding batch of image file names 
+        of shape (N,) of type 'U' (numpy string type).
+    """
     if file_path.endswith(".json"):
         with open(file_path, 'r') as f:
             # Read and parse
@@ -31,11 +71,30 @@ def parse_landmarks_file(
 
         # Use the first column for filenames, the rest for landmarks
         filenames = np.genfromtxt(file_path, usecols=0, dtype=str, **kwargs)
-        landmarks = np.genfromtxt(file_path, **kwargs)[:, 1:]
-    
+        landmarks = np.genfromtxt(file_path, dtype=np.float32, **kwargs)[:, 1:]
+
     return landmarks.reshape(len(landmarks), -1, 2), filenames
 
-def get_landmark_slices_5(num_landmarks: int) -> dict[str, int | slice]:
+def get_landmark_slices_5(num_landmarks: int) -> list[slice]:
+    """Gets the landmarks slices that show where the 5 landmarks are.
+
+    Generates slices of which coordinates to select in a larger set of 
+    landmarks (e.g., 12, 68, 106) to represent the coordinates of 
+    5-points landmarks set. The slice of indices can be used to select 
+    multiple coordinates and average them to a single point.
+
+    Args:
+        num_landmarks: The number of landmarks in the larger set.
+
+    Raises:
+        ValueError: If the number of landmarks in the larger set is 
+            not supported.
+
+    Returns:
+        A list of slices where each slice indicates the indices of 
+        coordinates to select from the larger set of landmarks to 
+        represent a 5-point landmarks set.
+    """
     match num_landmarks:
         case 5:
             indices = [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5)]
@@ -60,7 +119,33 @@ def get_landmark_slices_5(num_landmarks: int) -> dict[str, int | slice]:
 
     return [slice(*x) for x in indices]
 
-def get_ldm_slices(num_tgt_landmarks, num_src_landmarks):
+def get_ldm_slices(
+    num_tgt_landmarks: int,
+    num_src_landmarks: int,
+) -> list[slice]:
+    """Generates a list of slices that form a reduced landmarks set.
+
+    Takes the number of target landmarks and the number of source 
+    landmarks and generates slices that show which coordinates to select 
+    from a larger landmarks set (that should be averaged) to form a 
+    reduced landmarks set that has the same number of landmarks as the 
+    target landmarks set.
+
+    Args:
+        num_tgt_landmarks: The number of reduced landmarks to generate 
+            slices for.
+        num_src_landmarks: The number of actual landmarks that is larger 
+            or equal to the number of target landmarks. Based on this 
+            number, generated slices will contain different indices.
+
+    Raises:
+        ValueError: If the number of target landmarks is not supported.
+
+    Returns:
+        A list of slices where each slice indicates the indices of 
+        coordinates to select from the larger set of landmarks to 
+        represent a reduced (like target) landmarks set.
+    """
     match num_tgt_landmarks:
         case 5:
             slices = get_landmark_slices_5(num_src_landmarks)
@@ -71,8 +156,24 @@ def get_ldm_slices(num_tgt_landmarks, num_src_landmarks):
     return slices
 
 def as_numpy(
-    img: torch.Tensor | np.ndarray | list[torch.Tensor | np.ndarray],
+    img: torch.Tensor | np.ndarray | list[torch.Tensor] | list[np.ndarray],
 ) -> np.ndarray | list[np.ndarray]:
+    """Converts batch of images to numpy type.
+
+    Converts a batch of images to numpy type. UINT8 type and channel 
+    dimension is last. If the batch of images is already of numpy type, 
+    it is simply returned.
+
+    Args:
+        img: The image batch represented as a torch tensor of shape 
+            (N, 3, H, W) or a list of torch tensors of different 
+            spatial sizes.
+
+    Returns:
+        A batch of images represented as a numpy array of shape 
+        (N, H, W, 3) of type np.uint8 or a list of numpy arrays of 
+        different spatial sizes.
+    """
     if isinstance(img[0], np.ndarray):
         return img
     elif isinstance(img, list):
@@ -83,9 +184,26 @@ def as_numpy(
     return img
 
 def as_tensor(
-    img: np.ndarray | torch.Tensor | list[np.ndarray | torch.Tensor],
+    img: np.ndarray | torch.Tensor | list[np.ndarray] | list[torch.Tensor],
     device: str | torch.device = "cpu",
 ) -> torch.Tensor | list[torch.Tensor]:
+    """Converts batch of images to torch tensor type.
+
+    Converts a batch of images to torch tensor type. Float 32 type and 
+    channel dimension is before spatial dimension. If the batch of 
+    images is already of torch tensor type, it is simply returned.
+
+    Args:
+        img: The image batch represented as a numpy array of shape 
+            (N, H, W, 3) or a list of numpy arrays of different 
+            spatial sizes.
+        device: The device on which to return the torch tensor.
+
+    Returns:
+        A batch of images represented as a torch tensor of shape 
+        (N, 3, H, W) of type torch.float32 or a list of torch tensors 
+        of different spatial sizes.
+    """
     if isinstance(img[0], torch.Tensor):
         return img
     elif isinstance(img, list):
@@ -101,7 +219,7 @@ def create_batch_from_files(
     size: int | tuple[int, int] = 512,
     padding_mode: str = "constant",
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Creates image batch from a list of image paths
+    """Creates image batch from a list of image paths.
 
     For every image path in the given list, the image is read, resized
     to not exceed either of the dimensions specified in `size` while

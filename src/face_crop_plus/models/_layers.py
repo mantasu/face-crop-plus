@@ -10,7 +10,7 @@ from itertools import product
 ########################################################################
 
 class LoadMixin():
-    URL_ROOT = "https://github.com/mantasu/face-cropper-plus/releases/download/v1.0.0/"
+    URL_ROOT = "https://github.com/mantasu/face-crop-plus/releases/download/v1.0.0/"
     WEIGHTS_FILENAME = None
 
     def load(self, device: str | torch.device = "cpu"):

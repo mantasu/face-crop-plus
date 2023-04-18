@@ -3,25 +3,127 @@ import cv2
 import tqdm
 import torch
 import numpy as np
-import torch.nn.functional as F
 
 from functools import partial
 from collections import defaultdict
-from multiprocessing import cpu_count
 from multiprocessing.pool import ThreadPool
 
-from models.bise import BiSeNet
-from models.rrdb import RRDBNet
-from models.retinaface import RetinaFace
+# TODO: DOT
+from models import BiSeNet
+from models import RRDBNet
+from models import RetinaFace
 
+from utils import (
+    STANDARD_LANDMARKS_5, 
+    parse_landmarks_file, 
+    get_ldm_slices, 
+    create_batch_from_files, 
+    as_numpy, 
+    as_tensor,
+)
 
-from utils import parse_landmarks_file, get_ldm_slices, STANDARD_LANDMARKS_5, create_batch_from_files, as_numpy, as_tensor
 
 class Cropper():
-    """
-    TODO: num_cpus, process_dir documentation, examples, rrdb predict type
+    """Face cropper class with bonus features.
+
+    This class is capable of automatically aligning and center-cropping 
+    faces, enhancing image quality and grouping the extracted faces 
+    according to specified face attributes, as well as generating masks 
+    for those attributes.
+    
+    ## Capabilities
+
+    This class has the following 3 main features:
+        1. **Face cropping** - automatic face alignment and cropping 
+           based on landmarks. The landmarks can either be predicted via 
+           face detection model (see :py:class:`~RetinaFace`) or they 
+           can be provided as txt, csv, json etc. file. It is possible 
+           to control face factor in the extracted images and strategy 
+           of extraction (e.g., largest face, all faces per image).
+        2. **Face enhancement** - automatic quality enhancement of 
+           images where the relative face area is small. For instance, 
+           there may be images with many faces, but the quality of those 
+           faces, if zoomed in, is low. Quality enhancement feature 
+           allows to remove the blurriness. It can also enhance the 
+           quality of every image, if desired (see 
+           :py:class:`~RRDBNet`).
+        3. **Face parsing** - automatic face attribute parsing and 
+           grouping to sub-directories according selected attributes. 
+           Attributes can indicate to group faces that contain specific 
+           properties, e.g., "earrings and neckless", "glasses". They 
+           can also indicate what properties the faces should not 
+           include to form a group, e.g., "no accessories" group would 
+           indicate to include faces without hats, glasses, earrings, 
+           neckless etc. It is also possible to generate masks for 
+           selected face attributes, e.g., "glasses", 
+           "eyes and eyebrows". For more intuition on how grouping 
+           works, see :py:class:`~BiSeNet` and 
+           :py:meth:`~Cropper.save_groups`.
+    
+    The class is designed to perform all or some combination of the 
+    functions in one go, however, each feature is independent of one 
+    another and can work one by one. For example, it is possible to 
+    first extract all the faces in some output directory, then apply 
+    quality enhancement for every face to produce better quality faces 
+    in another output directory and then apply face parsing to group 
+    faces into different sub-folders according to some common attributes 
+    in a final output directory.
+
+    It is possible to configure the number of processing units and the 
+    batch size for significant speedups., if the hardware allows.
+
+    ## Examples
+
+    Command line example
+        >>> python face_crop_plus -i path/to/images -o path/to/out/dir
+
+    Auto face cropping (with face factor) and quality enhancement:
+        >>> cropper = Cropper(face_factor=0.7, enh_threshold=0.01)
+        >>> cropper.process_dir(input_dir="path/to/images")
+    
+    Very fast cropping with already known landmarks (no enhancement):
+        >>> cropper = Cropper(landmarks="path/to/landmarks.txt", 
+                              num_processes=24,
+                              enh_threshold=None)
+        >>> cropper.process_dir(input_dir="path/to/images")
+    
+    Face cropping to attribute groups to custom output dir:
+        >>> attr_groups = {"glasses": [6], "no_glasses_hats": [-6, -18]}
+        >>> cropper = Cropper(attr_groups=attr_groups)
+        >>> inp, out = "path/to/images", "path/to/parent/out/dir"
+        >>> cropper.process_dir(input_dir=inp, output_dir=out)
+    
+    Face cropping and grouping by face attributes (+ generating masks):
+        >>> groups = {"glasses": [6], "eyes_and_eyebrows": [2, 3, 4, 5]}
+        >>> cropper = Cropper(output_format="png", mask_groups=groups)
+        >>> cropper.process_dir("path/to/images")
+
+    For grouping by face attributes, see documented face attribute 
+    indices in :py:class:`~BiSeNet`.
+
+    ## Attributes
+
+    For how to initialize the class and to understand its functionality 
+    better, please refer to class attributes initialize via 
+    :py:meth:`~Cropper.__init__`. Here, further class attributes are 
+    described automatically initialized via 
+    :py:meth:`~Cropper._init_models` and 
+    :py:meth:`~Cropper._init_landmarks_target`.
 
     Attributes:
+        det_model (RetinaFace): Face detection model (torch.nn.Module) 
+            that is capable of detecting faces and predicting landmarks 
+            used for face alignment. See :py:class:`~RetinaFace`.
+        enh_model (RRDBNet): Image quality enhancement model 
+            (torch.nn.Module) that is capable of enhancing the quality 
+            of images with faces. It can automatically detect which 
+            faces to enhance based on average face area in the image, 
+            compared to the whole image area. See :py:class:`~RRDBNet`.
+        par_model (BiSeNet): Face parsing model (torch.nn.Module) that 
+            is capable of classifying pixels according to specific face 
+            attributes, e.g., "left_eye", "earring". It is able to group 
+            faces to different groups and generate attribute masks. See 
+            :py:class:`~BiSeNet`.
         landmarks_target (np.ndarray): Standard normalized landmarks of 
             shape  (`self.num_std_landmarks`, 2). These are scaled by 
             `self.face_factor` and used as ideal landmark coordinates 
@@ -44,7 +146,7 @@ class Cropper():
         det_threshold: float | None = 0.6,
         enh_threshold: float | None = 0.001,
         batch_size: int = 8,
-        num_processes: int = cpu_count(),
+        num_processes: int = 1,
         device: str | torch.device = "cpu",
     ):
         """Initializes the cropper.
@@ -178,7 +280,7 @@ class Cropper():
                 image processing. Each process works in parallel on 
                 multiple threads, significantly increasing the 
                 performance speed. Increase if less prediction models 
-                are used and increase otherwise. Defaults to cpu_count().
+                are used and increase otherwise. Defaults to 1.
             device: The device on which to perform the predictions, 
                 i.e., landmark detection, quality enhancement and face 
                 parsing. If landmarks are provided, no enhancement and 
@@ -205,6 +307,7 @@ class Cropper():
         # The only option for STD
         self.num_std_landmarks = 5
 
+        # Modify attributes to have proper type
         if isinstance(self.output_size, int):
             self.output_size = (self.output_size, self.output_size)
         
@@ -246,6 +349,11 @@ class Cropper():
         self.enh_model = None
         self.par_model = None
 
+        if torch.cuda.is_available() and self.device.index is not None:
+            # Helps to prevent CUDA memory errors
+            torch.cuda.set_device(self.device.index)
+            torch.cuda.empty_cache()
+
         if self.det_threshold is not None and self.landmarks is None:
             # If detection threshold is set, we will predict landmarks
             self.det_model = RetinaFace(self.strategy, self.det_threshold)
@@ -263,6 +371,33 @@ class Cropper():
             self.par_model.load(device=self.device)
     
     def _init_landmarks_target(self):
+        """Initializes target landmarks set.
+
+        This method initializes a set of standard landmarks. Standard, 
+        or target, landmarks refer to an average set of landmarks with 
+        ideal normalized coordinates for each facial point. The source 
+        facial points will be rotated, scaled and translated to match 
+        the standard landmarks as close as possible.
+
+        Both source (computed separately for each image) and target 
+        landmarks must semantically match, e.g., the left eye coordinate 
+        in target landmarks also corresponds to  the left eye coordinate 
+        in source landmarks.
+
+        There should be a standard landmarks set defined for a desired 
+        number of landmarks. Each coordinate in that set is normalized, 
+        i.e., x and y values are between 0 and 1. These values are then 
+        scaled based on face factor and resized to match the desired 
+        output size as defined by `self.output_size`.
+
+        Note:
+            Currently, only 5 standard landmarks are supported.
+
+        Raises:
+            ValueError: If the number of standard landmarks is not 
+                supported. The number of standard landmarks is 
+                `self.num_std_landmarks`.
+        """
         match self.num_std_landmarks:
             case 5:
                 # If the number of std landmarks is 5
@@ -283,75 +418,6 @@ class Cropper():
 
         # Pass STD landmarks as target landms
         self.landmarks_target = std_landmarks
-    
-    # def generate_source_and_target_landmarks(
-    #     self,
-    #     landmarks: np.ndarray,
-    # ) -> tuple[np.ndarray, np.ndarray]:
-    #     """Generates source and target landmarks to estimate transforms.
-
-    #     Takes a batch of landmarks and selects `self.num_std_landmarks` 
-    #     from each set of landmarks of that batch to make source 
-    #     landmarks. It also generates a set of standard (ideal/reference) 
-    #     landmarks with `self.num_std_landmarks` coordinates. The 
-    #     landmarks in both source and target variables semantically 
-    #     match, e.g., the left eye coordinate in target landmarks also 
-    #     corresponds to  the left eye coordinate in source landmarks.
-    #     These 2 landmark variables are used to estimate transformations 
-    #     of images - each image to which a set of landmarks (from source 
-    #     landmarks batch) belongs is transformed such that the area 
-    #     covers the those landmarks as the standard (target) landmarks 
-    #     set (as ideally as possible).
-
-    #     Args:
-    #         landmarks: Landmarks batch of type np.float32 with values 
-    #             between (0, 0) and `self.resize_size` (although they can 
-    #             be slightly out of bounds for faces at the edge of the 
-    #             images) of shape (num_faces, num_landm, 2).
-
-    #     Raises:
-    #         ValueError: If the number of standard landmarks is not 
-    #             supported. The number of standard landmarks is 
-    #             `self.num_std_landmarks`, unless there are less 
-    #             landmark coordinates in `landmarks`, in which case that 
-    #             lower number is uses as the number of standard 
-    #             landmarks.
-
-    #     Returns:
-    #         A tuple where the first element is a batch of source 
-    #         landmarks of shape (N, `self.num_std_landmarks`, 2) and the 
-    #         second element is a set of ideal target landmarks of shape 
-    #         (`self.num_std_landmarks`, 2). Both are of type 
-    #         `np.float32`, except source landmarks have the same value 
-    #         range as input `landmarks`, whereas target landmarks are 
-    #         normalized between 0 and 1.
-    #     """
-    #     # Num STD landmarks cannot exceed the actual number of landmarks
-    #     # num_std_landmarks = min(landmarks.shape[1], self.num_std_landmarks)
-
-    #     match num_std_landmarks:
-    #         case 5:
-    #             # If the number of standard lms is 5
-    #             std_landmarks = STANDARD_LANDMARKS_5
-    #             slices = get_landmark_indices_5(landmarks.shape[1])
-    #         case _:
-    #             # Otherwise the number of STD landmarks is not supported
-    #             raise ValueError(f"Unsupported number of standard landmarks "
-    #                              f"for estimating alignment transform matrix: "
-    #                              f"{num_std_landmarks}.")
-        
-    #     # Compute the mean landmark coordinates from retrieved slices
-    #     landmarks = np.stack([landmarks[:, s].mean(1) for s in slices], axis=1)
-        
-    #     # Apply appropriate scaling based on face factor and out size
-    #     std_landmarks[:, 0] *= self.output_size[0] * self.face_factor
-    #     std_landmarks[:, 1] *= self.output_size[1] * self.face_factor
-
-    #     # Add an offset to standard landmarks to center the cropped face
-    #     std_landmarks[:, 0] += (1 - self.face_factor) * self.output_size[0] / 2
-    #     std_landmarks[:, 1] += (1 - self.face_factor) * self.output_size[1] / 2
-
-    #     return landmarks, std_landmarks
 
     def crop_align(
         self,
@@ -376,16 +442,19 @@ class Cropper():
         
         Crucial role in this method plays `self.landmarks_target` which 
         is the standard set of landmarks used as a reference for the 
-        source landmarks.
+        source landmarks. Target and source landmark sets are used to 
+        estimate transformations of images - each image to which a set 
+        of landmarks (from source landmarks batch) belongs is 
+        transformed such that the area covers the those landmarks as the 
+        standard  (target) landmarks set (as ideally as possible). For 
+        more details about target landmarks, check 
+        :py:meth:`~Cropper._init_landmarks_target`.
 
         Note:
-            Standard, or target, landmarks refer to an average 
-            set of landmarks with ideal normalized coordinates for each 
-            facial point. The source facial points will be rotated, 
-            scaled and translated to match the standard landmarks as 
-            close as possible. If `self.allow_skew` is set to True, then 
-            facial points will also be skewed (resulting in, e.g., 
-            longer/flatter faces than in the original images).
+            If `self.allow_skew` is set to True, then facial points will 
+            also be skewed to match `self.landmarks_target` as close as 
+            possible (resulting in, e.g., longer/flatter faces than in 
+            the original images).
 
         Args:
             images: Image batch of shape (N, H, W, 3) of type np.uint8 
@@ -414,7 +483,7 @@ class Cropper():
             of the area of a face relative to the whole face image area
             is `self.face_factor`. The output is a numpy array of shape 
             (N, H, W) of type np.uint8 (same channel structure as for 
-            the input images). (H, W) is defined by `self.size`.
+            the input images). (H, W) is defined by `self.output_size`.
         """
         # Init list, border mode
         transformed_images = []
@@ -656,7 +725,7 @@ class Cropper():
                     masks = masks[[mask_indices.index(i) for i in group_idx]]
                     self.save_group(masks, file_name_group, group_dir)
 
-    def process_batch(self, file_names: list[str], in_dir: str, out_dir: str):
+    def process_batch(self, file_names: list[str], input_dir: str, output_dir: str):
         """Extracts faces from a batch of images and saves them.
 
         Takes file names, input directory, reads images and extracts 
@@ -687,8 +756,8 @@ class Cropper():
         Args:
             file_names: The list of image file names (not full paths). 
                 All the images should be in the same directory.
-            in_dir: Path to input directory with image files.
-            out_dir: Path to output directory to save the extracted 
+            input_dir: Path to input directory with image files.
+            output_dir: Path to output directory to save the extracted 
                 face images.
         """
         if self.landmarks is None and self.det_model is None:
@@ -697,7 +766,7 @@ class Cropper():
 
             for i, file_name in enumerate(file_names):
                 # Make path, load image
-                path = os.path.join(in_dir, file_name)
+                path = os.path.join(input_dir, file_name)
                 image = cv2.cvtColor(cv2.imread(path), cv2.COLOR_BGR2RGB)
 
                 # Update the lists
@@ -709,7 +778,7 @@ class Cropper():
 
             for i, file_name in enumerate(file_names):
                 # Make path, load image, check indices
-                path = os.path.join(in_dir, file_name)
+                path = os.path.join(input_dir, file_name)
                 image = cv2.cvtColor(cv2.imread(path), cv2.COLOR_BGR2RGB)
                 indices_i = np.where(file_name == self.landmarks[1])[0]
 
@@ -723,7 +792,7 @@ class Cropper():
             landmarks = self.landmarks[0][ldm_indices]
         elif self.det_model is not None:
             # Create a batch of images (with faces) and their paddings
-            b = create_batch_from_files(file_names, in_dir, self.resize_size)
+            b = create_batch_from_files(file_names, input_dir, self.resize_size)
             images, paddings = as_tensor(b[0], self.device), b[2]
 
             # If landmarks were not given, predict, undo padding
@@ -741,7 +810,7 @@ class Cropper():
 
         if self.enh_model is not None:
             # Enhance some images
-            images = as_tensor(images)
+            images = as_tensor(images, self.device)
             images = self.enh_model.predict(images, landmarks, indices)
 
         # Convert to numpy images, initialize groups
@@ -757,49 +826,45 @@ class Cropper():
 
         # Pick file names for each face, save faces
         file_names = np.array(file_names)[indices]
-        self.save_groups(images, file_names, out_dir, *groups)
-        
-        # Empty cache
-        torch.cuda.empty_cache()
+        self.save_groups(images, file_names, output_dir, *groups)
     
     def process_dir(self, input_dir: str, output_dir: str | None = None):
+        """Processes images in the specified input directory.
+
+        Splits all the file names in the input directory to batches 
+        and processes batches on multiple cores. For every file name 
+        batch, images are loaded, some are optionally enhanced, 
+        landmarks are generated and used to optionally align and 
+        center-crop faces, and grouping is optionally applied based on
+        face attributes. For more details, check 
+        :py:meth:`~Cropper.process_batch`.
+
+        Note:
+            There might be a few seconds delay before the actual 
+            processing starts if there are a lot of files in the 
+            directory - it takes some time to split all the file names 
+            to batches.
+
+        Args:
+            input_dir: Path to input directory with image files.
+            output_dir: Path to output directory to save the extracted 
+                (and optionally grouped to sub-directories) face images. 
+                If None, then the same path as for `input_dir` is used 
+                and additionally "_faces" suffix is added to the name.
+        """
         if output_dir is None:
             # Create a default output dir name
-            output_dir = input_dir + "_aligned"
+            output_dir = input_dir + "_faces"
 
         # Create batches of image file names in input dir
         files, bs = os.listdir(input_dir), self.batch_size
         file_batches = [files[i:i+bs] for i in range(0, len(files), bs)]
-
-        # for i, file_batch in enumerate(tqdm.tqdm(file_batches)):
-        #     # print("Processing batch", i, f"[{len(file_batch)}]" )
-        #     self.process_batch(file_batch, input_dir, output_dir)
-
-        # worker_fn = partial(self.process_batch)
-
+        
+        # Define worker function and its additional arguments
+        kwargs = {"input_dir": input_dir, "output_dir": output_dir}
+        worker = partial(self.process_batch, **kwargs)
+        
         with ThreadPool(self.num_processes, self._init_models) as pool:
             # Create imap object and apply workers to it
-            # args = (file_batches, input_dir, output_dir)
-
-            imap = pool.imap_unordered(
-                func=partial(self.process_batch, in_dir=input_dir, out_dir=output_dir),
-                iterable=file_batches,
-            )
-
+            imap = pool.imap_unordered(worker, file_batches)
             list(tqdm.tqdm(imap, total=len(file_batches), desc="Processing"))
-
-
-if __name__ == "__main__":
-    attr_groups = {"glasses": [6], "earings": [9], "neckless": [15], "hat": [18], "no_accessuaries": [-6, -9, -15, -18]}
-    mask_groups = {"eyes_and_eyebrows": [2, 4], "lip_and_mouth": [11, 12, 13], "nose": [10]}
-
-    kwargs = {
-        # "det_threshold": None,
-        "enh_threshold": None,
-        "attr_groups": None,
-        "mask_groups": None,
-        "num_processes": 4,
-    }
-
-    cropper = Cropper(strategy="best", resize_size=1024, device="cuda:0", **kwargs, )#landmarks="landmark.txt")
-    cropper.process_dir("img_celeba")

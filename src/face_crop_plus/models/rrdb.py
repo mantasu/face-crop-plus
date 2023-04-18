@@ -35,9 +35,6 @@ class RRDBNet(nn.Module, LoadMixin):
     """
     WEIGHTS_FILENAME = "bsrgan_x4_enhancer.pth"
 
-    # WEIGHTS_FILENAME = "BSRGAN.pth"
-    # URL_ROOT = "https://github.com/cszn/KAIR/releases/download/v1.0/"
-
     def __init__(self, min_face_factor: float = 0.001):
         """Initializes RRDB (BSRGAN) model.
 
@@ -109,7 +106,8 @@ class RRDBNet(nn.Module, LoadMixin):
         Args:
             images: Image batch of shape (N, 3, H, W) in RGB form with 
                 float values from 0.0 to 255.0. It must be on the same 
-                device as this model.
+                device as this model. It can also be a list of tensors
+                of different shapes.
             landmarks: Landmarks batch of shape (num_faces, 5, 2) used 
                 to compute average face area for each image. If None, 
                 then every image will be enhanced.
@@ -138,7 +136,7 @@ class RRDBNet(nn.Module, LoadMixin):
 
                 # Compute relative face factor (area face takes up)
                 [w, h] = (landmarks_i[:, 4] - landmarks_i[:, 0]).T
-                face_factor = w * h / (images.shape[2] * images.shape[3])
+                face_factor = w * h / (images[0].shape[1] * images[0].shape[2])
 
             if face_factor.mean() < self.min_face_factor:
                 # Enhance ith img if factor below threshold

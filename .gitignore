@@ -1,10 +1,9 @@
 # Temp
 img_celeba
+img_celeba_faces
 landmark.txt
-hub
-weights
 
+demo/input_images_faces
 build
 __pycache__
-*.jpg
-face_cropper_plus.egg-info
+*.egg-info
