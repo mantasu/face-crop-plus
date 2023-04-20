@@ -24,22 +24,28 @@ def parse_landmarks_file(
     corresponding numpy array of those sets of landmarks.
 
     The files are expected to be formatted as follows:
-        * `.json`:
+
+        * `.json`::
+
             {
                 "image_1.jpg": [23, 45, 64, 47, ...],
                 "image_2.jpg": [17, 32, 30, 29, ...],
                 ...
             }
-        * `.csv`:
+
+        * `.csv`::
+
             images,x1,y1,x2,y2,...
             image_1.jpg,23,45,64,47,...
             image_2.jpg,17,32,30,29,...
             ...
-        `.txt` and other:
+
+        * `.txt` and other::
+
             image_1.jpg 23 45 64 47 ...
             image_2.jpg 17 32 30 29 ...
             ...
-    
+
     Note:
         The number of landmarks does not matter, all will be 
         transformed to shape (-1, 2), where -1 stands for the number of 
@@ -239,7 +245,7 @@ def create_batch_from_files(
         path_list: The list of paths to images.
         padding_mode: The type of padding to apply to pad the shorter
             dimension. For the available options, see
-            <https://docs.opencv.org/3.4/d2/de8/group__core__array.html#ga209f2f4869e304c82d07739337eae7c5>.
+            `OpenCV BorderTypes <https://docs.opencv.org/3.4/d2/de8/group__core__array.html#ga209f2f4869e304c82d07739337eae7c5>`_.
             It can be all lowercase. Defaults to "constant".
         size: The width and the height each image should be resized +
             padded to. I.e., the spacial dimensions of the batch. If

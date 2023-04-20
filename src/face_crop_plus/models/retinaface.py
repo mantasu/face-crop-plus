@@ -421,7 +421,7 @@ class RetinaFace(nn.Module, LoadMixin):
         it returns those selected sets of landmarks and corresponding 
         indices that map each set to a specific image where the face was 
         originally detected.
-        
+
         The predicted sets of landmarks are 5-point coordinates (they  
         are specified from an observer's viewpoint, meaning that, for 
         instance, left eye is the eye on the left hand-side of the image 

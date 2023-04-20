@@ -5,5 +5,8 @@ landmark.txt
 
 demo/input_images_faces
 build
+_build
+_static
+_templates
 __pycache__
 *.egg-info

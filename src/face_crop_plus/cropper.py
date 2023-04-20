@@ -8,12 +8,11 @@ from functools import partial
 from collections import defaultdict
 from multiprocessing.pool import ThreadPool
 
-# TODO: dot
-from models import BiSeNet
-from models import RRDBNet
-from models import RetinaFace
+from .models import BiSeNet
+from .models import RRDBNet
+from .models import RetinaFace
 
-from utils import (
+from .utils import (
     STANDARD_LANDMARKS_5, 
     parse_landmarks_file, 
     get_ldm_slices, 
@@ -31,12 +30,14 @@ class Cropper():
     according to specified face attributes, as well as generating masks 
     for those attributes.
     
-    ## Capabilities
+    Capabilities
+    ------------
 
     This class has the following 3 main features:
+
         1. **Face cropping** - automatic face alignment and cropping 
            based on landmarks. The landmarks can either be predicted via 
-           face detection model (see :py:class:`~RetinaFace`) or they 
+           face detection model (see :class:`RetinaFace`) or they 
            can be provided as txt, csv, json etc. file. It is possible 
            to control face factor in the extracted images and strategy 
            of extraction (e.g., largest face, all faces per image).
@@ -59,7 +60,7 @@ class Cropper():
            "eyes and eyebrows". For more intuition on how grouping 
            works, see :py:class:`~BiSeNet` and 
            :py:meth:`~Cropper.save_groups`.
-    
+
     The class is designed to perform all or some combination of the 
     functions in one go, however, each feature is independent of one 
     another and can work one by one. For example, it is possible to 
@@ -72,7 +73,8 @@ class Cropper():
     It is possible to configure the number of processing units and the 
     batch size for significant speedups., if the hardware allows.
 
-    ## Examples
+    Examples
+    --------
 
     Command line example
         >>> python face_crop_plus -i path/to/images -o path/to/out/dir
@@ -101,10 +103,11 @@ class Cropper():
     For grouping by face attributes, see documented face attribute 
     indices in :py:class:`~BiSeNet`.
 
-    ## Attributes
+    Class Attributes
+    ----------------
 
     For how to initialize the class and to understand its functionality 
-    better, please refer to class attributes initialize via 
+    better, please refer to class attributes initialized via 
     :py:meth:`~Cropper.__init__`. Here, further class attributes are 
     described automatically initialized via 
     :py:meth:`~Cropper._init_models` and 
@@ -160,7 +163,7 @@ class Cropper():
                 256.
             output_format: The output format of the saved face images. 
                 For available options, see 
-                <https://docs.opencv.org/4.x/d4/da8/group__imgcodecs.html#ga288b8b3da0892bd651fce07b3bbd3a56>. 
+                `OpenCV imread <https://docs.opencv.org/4.x/d4/da8/group__imgcodecs.html#ga288b8b3da0892bd651fce07b3bbd3a56>`_. 
                 If not specified, then the same image extension will not 
                 be changed, i.e., face images will be of the same format 
                 as the images from which they are extracted. Defaults to 
@@ -181,12 +184,14 @@ class Cropper():
                 output image. Defaults to 0.65.
             strategy: The strategy to use to extract faces from each 
                 image. The available options are:
+
                     * "all" - all faces will be extracted form each 
                       image.
                     * "best" - one face with the largest confidence 
                        score will be extracted from each image.
                     * "largest" - one face with the largest face area 
                        will be extracted from each image.
+
                 For more info, see :py:meth:`~RetinaFace.__init__`. 
                 Defaults to "largest".
             padding: The padding type (border mode) to apply when 
@@ -194,7 +199,7 @@ class Cropper():
                 the resulting center-cropped face image may be blank, in 
                 which case it can be padded with specific values. For 
                 available options, see 
-                <https://docs.opencv.org/3.4/d2/de8/group__core__array.html#ga209f2f4869e304c82d07739337eae7c5>. 
+                `OpenCV BorderTypes <https://docs.opencv.org/3.4/d2/de8/group__core__array.html#ga209f2f4869e304c82d07739337eae7c5>`_. 
                 If specified as "constant", the value of 0 will be used. 
                 Defaults to "reflect".
             allow_skew: Whether to allow skewing when aligning the face 
@@ -212,6 +217,7 @@ class Cropper():
                 specified via this variable. If specified, landmark 
                 estimation will not be performed. There are 2 ways to 
                 specify landmarks:
+
                     1. As a path to landmarks file, in which case str 
                        should be provided. The specified file should 
                        contain file (image) names and corresponding 
@@ -232,7 +238,8 @@ class Cropper():
                        The second is a numpy array of shape (num_faces,) 
                        of type 'U' (numpy string type) where each value 
                        specifies a file name to which a corresponding 
-                       set of landmarks belongs. 
+                       set of landmarks belongs.
+
                 If not specified, 5 landmark coordinates will be 
                 estimated for each face automatically. Defaults to None.
             attr_groups: Attribute groups dictionary that specifies how
@@ -344,7 +351,7 @@ class Cropper():
             3. If `self.attr_groups` or `self.mask_groups` is provided,
                then face parsing model is initialized. For more info, 
                see :py:class:`~BiSeNet`.
-        
+
         Note:
             This is a useful initializer function if multiprocessing is 
             used, in which case copies of all the models can be created 
@@ -437,6 +444,7 @@ class Cropper():
         This method takes a batch of images (can be padded), and loops 
         through each image (represented as a numpy array) performing the 
         following actions:
+
             1. Removes the padding.
             2. Estimates affine transformation from source landmarks to 
                standard landmarks.
@@ -445,7 +453,7 @@ class Cropper():
             4. Returns a batch of face images represented as numpy 
                arrays of the same length ans the number of sets of 
                landmarks.
-        
+
         Crucial role in this method plays `self.landmarks_target` which 
         is the standard set of landmarks used as a reference for the 
         source landmarks. Target and source landmark sets are used to 
@@ -611,75 +619,71 @@ class Cropper():
 
         Example 1:
             If neither `attr_groups` nor `mask_groups` are provided, the 
-            face images will be saved according to this structure:
-            ```
-            ├── output_dir
-            |    ├── face_image_0.jpg
-            |    ├── face_image_1.png
-            |    ...
-            ```
+            face images will be saved according to this structure::
+
+                ├── output_dir
+                |    ├── face_image_0.jpg
+                |    ├── face_image_1.png
+                |    ...
 
         Example 2:
             If only `attr_groups` is provided (keys are names describing 
             common attributes across faces in that group and they are
             also sub-directories of `output_dir`), the structure is as
-            follows:
-            ```
-            ├── output_dir
-            |    ├── attribute_group_1
-            |    |    ├── face_image_0.jpg
-            |    |    ├── face_image_1.png
-            |    |    ...
-            |    ├── attribute_group_2
-            |    ...
-            ```
-        
+            follows::
+
+                ├── output_dir
+                |    ├── attribute_group_1
+                |    |    ├── face_image_0.jpg
+                |    |    ├── face_image_1.png
+                |    |    ...
+                |    ├── attribute_group_2
+                |    ...
+
         Example 3:
             If only `mask_groups` is provided (keys are names describing 
             the mask type and they are also sub-directories of
-            `output_dir`), the structure is as follows:
-            ```
-            ├── output_dir
-            |    ├── group_1
-            |    |    ├── face_image_0.jpg
-            |    |    ├── face_image_1.png
-            |    |    ...
-            |    ├── group_1_mask
-            |    |    ├── face_image_0.jpg
-            |    |    ├── face_image_1.png
-            |    |    ...
-            |    ├── group_2
-            |    |    ...
-            |    ├── group_2_mask
-            |    |    ...
-            |    ...
-            ```
-        
+            `output_dir`), the structure is as follows::
+
+                ├── output_dir
+                |    ├── group_1
+                |    |    ├── face_image_0.jpg
+                |    |    ├── face_image_1.png
+                |    |    ...
+                |    ├── group_1_mask
+                |    |    ├── face_image_0.jpg
+                |    |    ├── face_image_1.png
+                |    |    ...
+                |    ├── group_2
+                |    |    ...
+                |    ├── group_2_mask
+                |    |    ...
+                |    ...
+
         Example 4:
             If both `attr_groups` and `mask_groups` are provided, then 
             all images and masks will first be grouped by attributes and 
-            then by mask groups. The structure is then as follows:
-            ```
-            ├── output_dir
-            |    ├── attribute_group_1
-            |    |    ├── group_1_mask
-            |    |    |    ├── face_image_0.jpg
-            |    |    |    ├── face_image_1.png
-            |    |    |    ...
-            |    |    ├── group_1_mask
-            |    |    |    ├── face_image_0.jpg
-            |    |    |    ├── face_image_1.png
-            |    |    |    ...
-            |    |    ├── group_2
-            |    |    |    ...
-            |    |    ├── group_2_mask
-            |    |    |    ...
-            |    |    ...
-            |    |
-            |    ├── attribute_group_2
-            |    |    ...
-            |    ...
-            ```
+            then by mask groups. The structure is then as follows::
+            
+                ├── output_dir
+                |    ├── attribute_group_1
+                |    |    ├── group_1_mask
+                |    |    |    ├── face_image_0.jpg
+                |    |    |    ├── face_image_1.png
+                |    |    |    ...
+                |    |    ├── group_1_mask
+                |    |    |    ├── face_image_0.jpg
+                |    |    |    ├── face_image_1.png
+                |    |    |    ...
+                |    |    ├── group_2
+                |    |    |    ...
+                |    |    ├── group_2_mask
+                |    |    |    ...
+                |    |    ...
+                |    |
+                |    ├── attribute_group_2
+                |    |    ...
+                |    ...
 
         Args:
             faces: Face images (cropped and aligned) represented as a
@@ -737,6 +741,7 @@ class Cropper():
         Takes file names, input directory, reads images and extracts 
         faces and saves them to the output directory. This method works 
         as follows:
+
             1. Batch generation - a batch of images form the given file 
                names is generated. Each images is padded and resized to
                `self.resize_size` while keeping the same aspect ratio.

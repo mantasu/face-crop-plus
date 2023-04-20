@@ -2,7 +2,7 @@ import sys
 import json
 import argparse
 from typing import Any
-from cropper import Cropper
+from face_crop_plus import Cropper
 
 class ArgumentParserWithConfig(argparse.ArgumentParser):
     """An ArgumentParser that loads default values from a config file.
@@ -225,11 +225,14 @@ def main():
     align and center-crop face images, enhance quality, group by 
     attributes. For more details, see :py:class:`~Cropper`.
     """
+    # Parse arguments
     kwargs = parse_args()
 
+    # Pop the input and output dirs
     input_dir = kwargs.pop("input_dir")
     output_dir = kwargs.pop("output_dir")
 
+    # Init cropper and process
     cropper = Cropper(**kwargs)
     cropper.process_dir(input_dir, output_dir)
 
