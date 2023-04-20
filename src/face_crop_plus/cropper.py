@@ -8,7 +8,7 @@ from functools import partial
 from collections import defaultdict
 from multiprocessing.pool import ThreadPool
 
-# TODO: DOT
+# TODO: dot
 from models import BiSeNet
 from models import RRDBNet
 from models import RetinaFace
@@ -133,9 +133,9 @@ class Cropper():
     """
     def __init__(
         self,
-        output_size: int | tuple[int, int] = 256,
+        output_size: int | tuple[int, int] | list[int] = 256,
         output_format: str | None = None,
-        resize_size: int | tuple[int, int] = 1024,
+        resize_size: int | tuple[int, int] | list[int] = 1024,
         face_factor: float = 0.65,
         strategy: str = "largest",
         padding: str = "reflect",
@@ -311,8 +311,14 @@ class Cropper():
         if isinstance(self.output_size, int):
             self.output_size = (self.output_size, self.output_size)
         
+        if len(self.output_size) == 1:
+            self.output_size = (self.output_size[0], self.output_size[0])
+        
         if isinstance(self.resize_size, int):
             self.resize_size = (self.resize_size, self.resize_size)
+        
+        if len(self.resize_size) == 1:
+            self.resize_size = (self.resize_size[0], self.resize_size[0])
 
         if isinstance(self.device, str):
             self.device = torch.device(device)

@@ -36,9 +36,9 @@ setuptools.setup(
         "torch",
         "torchvision",
     ],
-    dependency_links = [
-        "https://download.pytorch.org/whl/cu118",
-    ],
+    # dependency_links = [
+    #     "https://download.pytorch.org/whl/cu118",
+    # ],
     classifiers = [
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",

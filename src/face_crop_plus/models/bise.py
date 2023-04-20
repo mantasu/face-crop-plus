@@ -323,7 +323,7 @@ class BiSeNet(nn.Module, LoadMixin):
     @torch.no_grad()
     def predict(
         self,
-        images: torch.Tensor,
+        images: torch.Tensor | list[torch.Tensor],
     ) -> tuple[dict[str, list[int]] | None, 
                dict[str, tuple[list[int], list[np.ndarray]]] | None]:
         """Predicts attribute and mask groups for face images.
@@ -340,7 +340,9 @@ class BiSeNet(nn.Module, LoadMixin):
         Args:
             images: Image batch of shape (N, 3, H, W) in RGB form with 
                 float values from 0.0 to 255.0. It must be on the same 
-                device as this model.
+                device as this model. A list of tensors can also be 
+                provided, however, they all must have the same spatial 
+                dimensions to be stack-able to a single batch.
 
         Returns:
             A tuple of 2 dictionaries (either can be None):
@@ -370,6 +372,10 @@ class BiSeNet(nn.Module, LoadMixin):
         if self.mask_groups is not None:
             # Initialize an empty dictionary of mask groups
             mask_groups = {k: ([], []) for k in self.mask_groups.keys()}
+        
+        if isinstance(images, list):
+            # Stack the list of tensors
+            images = torch.stack(images)
         
         # Convert mean and std to tensors and reshape, resize images
         mean = torch.tensor(self.mean, device=images.device).view(1, 3, 1, 1)

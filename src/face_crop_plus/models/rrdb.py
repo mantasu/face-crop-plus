@@ -138,7 +138,7 @@ class RRDBNet(nn.Module, LoadMixin):
                 [w, h] = (landmarks_i[:, 4] - landmarks_i[:, 0]).T
                 face_factor = w * h / (images[0].shape[1] * images[0].shape[2])
 
-            if face_factor.mean() < self.min_face_factor:
+            if face_factor.mean() <= self.min_face_factor:
                 # Enhance ith img if factor below threshold
                 image_x4 = self(images[i].unsqueeze(0).div(255))
                 image_x1 = F.interpolate(image_x4, None, 0.25, "bicubic")

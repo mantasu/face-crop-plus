@@ -1,0 +1,19 @@
+{
+    "input_dir": "input_images",
+    "output_dir": null,
+    "output_size": 256,
+    "output_format": "jpg",
+    "resize_size": [1024, 1024],
+    "face_factor": 0.75,
+    "strategy": "best",
+    "padding": "reflect",
+    "allow_skew": false,
+    "landmarks": null,
+    "attr_groups": null,
+    "mask_groups": null,
+    "det_threshold": 0.6,
+    "enh_threshold": null,
+    "batch_size": 8,
+    "num_processes": 1,
+    "device": "cpu"
+}
