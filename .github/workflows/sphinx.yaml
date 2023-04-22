@@ -1,4 +1,4 @@
-name: Build and deploy Sphinx docs
+name: Deploy Sphinx docs
 
 on:
   push:
@@ -15,18 +15,19 @@ concurrency:
   group: "pages"
   cancel-in-progress: false
 
-jobs: 
-  build: 
+jobs:   
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
-
     steps:
-      - uses: actions/checkout@v2
-
       - name: Set up Python 3.10
         uses: actions/setup-python@v2
         with:
            python-version: "3.10"
-        
+      - name: Checkout
+        uses: actions/checkout@v3
       - name: Install dependencies
         run: | 
           python -m pip install --upgrade pip
@@ -36,16 +37,6 @@ jobs:
         run: | 
           cd docs/
           make html
-  
-  deploy:
-    needs: [build]
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v3
       - name: Setup Pages
         uses: actions/configure-pages@v3
       - name: Upload artifact
