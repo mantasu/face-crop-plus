@@ -2,13 +2,14 @@ import sys
 import json
 import argparse
 from typing import Any
-from face_crop_plus import Cropper
+from .cropper import Cropper
 
 class ArgumentParserWithConfig(argparse.ArgumentParser):
     """An ArgumentParser that loads default values from a config file.
 
-    This class extends the argparse.ArgumentParser class to load default 
-    values from a config file specified by a command-line argument.
+    This class extends the :class:`argparse.ArgumentParser` class to 
+    load default values from a config file specified by a command-line 
+    argument.
     """
     def __init__(
         self,
@@ -20,12 +21,12 @@ class ArgumentParserWithConfig(argparse.ArgumentParser):
 
         Args:
             *args: Additional arguments for initializing 
-                argparse.ArgumentParser.
+                :class:`argparse.ArgumentParser`.
             config_arg: The name (or the list of names) of the 
                 command-line argument that specifies the path to the 
                 JSON config file. Defaults to ["-c", "--config"].
             **kwargs: Additional keyword arguments for initializing 
-                argparse.ArgumentParser.
+                :class:`argparse.ArgumentParser`.
         """
         super().__init__(*args, **kwargs)
         self.config_arg = config_arg
@@ -48,7 +49,7 @@ class ArgumentParserWithConfig(argparse.ArgumentParser):
         """Parse arguments and load default values from the config file.
 
         This method parses the command-line arguments and loads default 
-        values from the config file specified by the `config_arg` 
+        values from the config file specified by the ``config_arg`` 
         parameter. The default values are only loaded once.
 
         Args:
@@ -97,11 +98,11 @@ def parse_args() -> dict[str, Any]:
     """Parses command-line arguments.
 
     Defines the possible command-line arguments that must match the 
-    acceptable arguments by :py:class:`~Cropper`. It parses those 
-    arguments and converts them to a dictionary.
+    acceptable arguments by :class:`.Cropper`. It parses those arguments 
+    and converts them to a dictionary.
 
     Raises:
-        ValueError: If `input_dir` is not specified.
+        ValueError: If ``input_dir`` is not specified.
 
     Returns:
         A dictionary where keys represent argument names and values 
@@ -145,12 +146,12 @@ def parse_args() -> dict[str, Any]:
         help=f"The strategy to use to extract faces from each image. Defaults "
              f"to 'largest'.")
     parser.add_argument(
-        "-pd", "--padding", type=str, default="reflect",
+        "-p", "--padding", type=str, default="reflect",
         choices=["constant", "replicate", "reflect", "wrap", "reflect_101"], 
         help=f"The padding type (border mode) to apply when cropping out faces"
              f" near edges. Defaults to 'reflect'.")
     parser.add_argument(
-        "-sk", "--allow-skew", action="store_true", 
+        "-a", "--allow-skew", action="store_true", 
         help=f"Whether to allow skewing the faces to better match the the "
              f"standard (average) face landmarks.")
     parser.add_argument(
@@ -183,12 +184,12 @@ def parse_args() -> dict[str, Any]:
              f"should be enhanced. It is the minimum average face factor in "
              f"the input image. Defaults to 0.001.")
     parser.add_argument(
-        "-bs", "--batch-size", type=int, default=8, 
+        "-b", "--batch-size", type=int, default=8, 
         help=f"The batch size. It is the maximum number of images that can be "
              f"processed by every processor at a single time-step. Defaults "
              f"to 8.")
     parser.add_argument(
-        "-p", "--num-processes", type=int, default=1, 
+        "-n", "--num-processes", type=int, default=1, 
         help=f"The number of processes to launch to perform image processing. "
              f"If landmarks are provided and no quality enhancement or "
              f"attribute grouping is done, feel free to set this to the "
@@ -223,7 +224,7 @@ def main():
     arguments and processes a specified directory of images. There are 
     3 main features the cropper can do (either together or separately): 
     align and center-crop face images, enhance quality, group by 
-    attributes. For more details, see :py:class:`~Cropper`.
+    attributes. For more details, see :class:`.Cropper`.
     """
     # Parse arguments
     kwargs = parse_args()

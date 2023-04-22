@@ -59,7 +59,7 @@ For more examples, see _Examples_ section.
 
 ## Features
 
-Here, some of the main arguments are described that control the behavior of each of the features. These arguments can be specified via command line or when initializing the `Cropper` class. There are more general arguments that For further details about how the `Cropper` class works, please refer to the documentation.
+Here, some of the main arguments are described that control the behavior of each of the features. These arguments can be specified via command line or when initializing the `Cropper` class. For further details about how the `Cropper` class works, please refer to the documentation.
 
 ### Alignment and Cropping
 
@@ -101,7 +101,7 @@ Quality enhancement feature allows to restore blurry faces. It has one main argu
 
 * `enh_threshold` - quality enhancement threshold that tells when the image quality should be enhanced. It is the minimum average face factor, i.e., face area relative to the image, below which the whole image is enhanced. Note that quality enhancement is an expensive operation, thus set this to a low value, like `0.01` to only enhance images where faces are actually small. If your images are of reasonable quality and don't contain many tiny faces, you may want to set this to _None_ (or to a negative value if using command-line) to disable the model. Here are some of the examples of the extracted faces before and after enhancing the image:
 
-    | Face 1                 | Face 2                 | Face 3                 | Face 6                 |
+    | Face 1                 | Face 2                 | Face 3                 | Face 4                 |
     | :--------------------: | :--------------------: | :--------------------: | :--------------------: |
     | ![b1](assets/f1_b.jpg) | ![b2](assets/f2_b.jpg) | ![b3](assets/f3_b.jpg) | ![b6](assets/f4_b.jpg) |
     | ![a1](assets/f1_a.jpg) | ![a2](assets/f2_a.jpg) | ![a3](assets/f3_a.jpg) | ![a6](assets/f4_a.jpg) |
@@ -129,9 +129,10 @@ Face parsing to attributes allows to group output images by category and generat
 
 > If both `attr_groups` and `mask_groups` are specified, first images are grouped according to face attributes, then images in each groups are further sub-grouped to different mask groups (along with their masks).
 
-<center>
 
 Here are the 19 possible face attributes (with `0` representing the neutral category):
+
+<center>
 
 |                     |                  |                  |
 | ------------------- | ---------------- | ---------------- |
@@ -163,11 +164,12 @@ An example JSON config file is [demo.json](demo/demo.json). If you've cloned the
 face-crop-plus --config demo/demo.json --device cuda:0 # overwrite device
 ```
 
-
 For all the available command line arguments, just type (although refer to documentation for more details):
 ```bash
 face-crop-plus -h
 ```
+
+> **Note**: you can use `fcp` as `face-crop-plus` alias , e.g., `fcp -c config.json`
 
 ### Pure Enhancement/Parsing
 
@@ -281,5 +283,3 @@ If you find this package helpful in your research, you can cite the following:
   howpublished = {\url{https://github.com/mantasu/face-crop-plus}},
 }
 ```
-
-The package is licensed under ... . More specifically, pre-trained models can only be used for non-commercial purposes.

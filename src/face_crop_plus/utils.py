@@ -54,14 +54,15 @@ def parse_landmarks_file(
     Args:
         file_path: The path to the landmarks file.
         **kwargs: Additional keyword arguments that go into 
-            `np.genfromtxt`. Please do not specify _dtype_ and _usecols_ 
-            arguments as they are already specified.
+            :func:`numpy.genfromtxt`. Please do not specify *dtype* and 
+            *usecols* arguments as they are already specified.
 
     Returns:
         A tuple where the first element is the parsed landmarks batch as 
-        a numpy array of shape (N, num_landm, 2) of type np.float32 and 
-        the second element is a corresponding batch of image file names 
-        of shape (N,) of type 'U' (numpy string type).
+        a numpy array of shape (N, ``num_landm``, 2) of type 
+        :attr:`numpy.float32` and  the second element is a corresponding 
+        batch of image file names of shape (N,) of type 
+        :class:`numpy.str_`.
     """
     if file_path.endswith(".json"):
         with open(file_path, 'r') as f:
@@ -177,8 +178,8 @@ def as_numpy(
 
     Returns:
         A batch of images represented as a numpy array of shape 
-        (N, H, W, 3) of type np.uint8 or a list of numpy arrays of 
-        different spatial sizes.
+        (N, H, W, 3) of type :attr:`numpy.uint8` or a list of numpy 
+        arrays of different spatial sizes.
     """
     if isinstance(img[0], np.ndarray):
         return img
@@ -207,8 +208,8 @@ def as_tensor(
 
     Returns:
         A batch of images represented as a torch tensor of shape 
-        (N, 3, H, W) of type torch.float32 or a list of torch tensors 
-        of different spatial sizes.
+        (N, 3, H, W) of type :attr:`torch.float32` or a list of torch 
+        tensors of different spatial sizes.
     """
     if isinstance(img[0], torch.Tensor):
         return img
@@ -228,7 +229,7 @@ def create_batch_from_files(
     """Creates image batch from a list of image paths.
 
     For every image path in the given list, the image is read, resized
-    to not exceed either of the dimensions specified in `size` while
+    to not exceed either of the dimensions specified in ``size`` while
     keeping the same aspect ratio and the shorter dimension is padded to
     fully match the specified size. All the images are stacked and
     returned as a batch. Variables required to transform the images back
@@ -237,12 +238,12 @@ def create_batch_from_files(
 
     Example:
         If some loaded image dimension is (1280×720) and the desired
-        output `size` is specified as `(512, 256)`, then the image is
-        first be resized to (455, 256) and then the width is padded from
-        both sides. The final image size is (512, 256).
+        output ``size`` is specified as *(512, 256)*, then the image is
+        first be resized to *(455, 256)* and then the width is padded 
+        from both sides. The final image size is *(512, 256)*.
 
     Args:
-        path_list: The list of paths to images.
+        file_names: The list of paths to images.
         padding_mode: The type of padding to apply to pad the shorter
             dimension. For the available options, see
             `OpenCV BorderTypes <https://docs.opencv.org/3.4/d2/de8/group__core__array.html#ga209f2f4869e304c82d07739337eae7c5>`_.
@@ -253,11 +254,12 @@ def create_batch_from_files(
             height. Defaults to 512.
 
     Returns:
-        tuple: A tuple of stacked numpy arrays representing 3 batches - 
-            resized + padded images of shape (N, H, W, 3) of type 
-            np.uint8 with values from 0 to 255, unscale factors of 
-            shape (N,) of type np.float32, and applied paddings of shape 
-            (N, 4) of type np.int64 with values >= 0.
+        A tuple of stacked numpy arrays representing 3 batches - resized 
+        + padded images of shape (N, H, W, 3) of type 
+        :attr:`numpy.uint8` with values from 0 to 255, un-scale factors 
+        of shape (N,) of type :attr:`numpy.float32`, and applied 
+        paddings of shape (N, 4) of type :attr:`numpy.int64` with 
+        values >= 0.
     """
     # Init lists, resize dims, border type
     images, unscales, paddings = [], [], []

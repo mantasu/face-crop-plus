@@ -17,6 +17,7 @@ class BiSeNet(nn.Module, LoadMixin):
     person's face perspective, meaning, for instance, left eye is the
     eye on the right hand-side of the picture, however, sides are not 
     always accurate):
+
         * 0 - neutral
         * 1 - skin
         * 2 - left eyebrow
@@ -36,45 +37,86 @@ class BiSeNet(nn.Module, LoadMixin):
         * 16 - clothes
         * 17 - hair
         * 18 - hat
-    
+
     Some examples of grouping by attributes:
-        * 'glasses': [6] - this will put each face image that contains 
-          pixels labeled as 6 to a category called 'glasses'.
-        * 'earings_and_neckless': [9, 15] - this will put each image 
+
+        * ``'glasses': [6]`` - this will put each face image that 
+          contains pixels labeled as 6 to a category called 'glasses'.
+        * ``'earings_and_neckless': [9, 15]`` - this will put each image 
           that contains pixels labeled as 9 and also contains pixels
           labeled as 15 to a category called 'earings_and_neckless'.
-        * 'no_accessories': [-6, -9, -15, -18] - this will put each face 
-          image that does not contain pixels labeled as either 6, 9, 15, 
-          or 18 to a category called 'no_accessories'.
+        * ``'no_accessories': [-6, -9, -15, -18]`` - this will put each 
+          face image that does not contain pixels labeled as either 6, 
+          9, 15, or 18 to a category called 'no_accessories'.
     
     Some examples of grouping by mask:
-        * 'nose': [10] - this will put each face image that contains 
+
+        * ``'nose': [10]`` - this will put each face image that contains 
           pixels labeled as 10 to a category called 'nose' and generate 
           a corresponding mask.  
-        * 'eyes_and_eyebrows': [2, 3, 4, 5] - this will put each image 
-          that contains pixels labeled as either 2, 3, 4, or 5 (or any 
-          combination of them) to a category called 'eyes_and_eyebrows' 
-          and generate a corresponding mask.
+        * ``'eyes_and_eyebrows': [2, 3, 4, 5]`` - this will put each 
+          image that contains pixels labeled as either 2, 3, 4, or 5 (or 
+          any combination of them) to a category called 
+          'eyes_and_eyebrows' and generate a corresponding mask.
     
-    This class also inherits `load` method from `LoadMixin` class. The 
-    method takes a device on which to load the model and loads the 
-    model with a default state dictionary loaded from `WEIGHTS_FILENAME` 
-    file. It sets this model to eval mode and disables gradients.
+    This class also inherits ``load`` method from ``LoadMixin`` class. 
+    The method takes a device on which to load the model and loads the 
+    model with a default state dictionary loaded from 
+    ``WEIGHTS_FILENAME`` file. It sets this model to eval mode and 
+    disables gradients.
     
     For more information on how BiSeNet model works, see this repo:
-    <https://github.com/zllrunning/face-parsing.PyTorch>. Most of the
-    code was taken from that repository.
+    `Face Parsing PyTorch <https://github.com/zllrunning/face-parsing.PyTorch>`_. 
+    Most of the code was taken from that repository.
 
     Note:
         Whenever an input shape is mentioned, N corresponds to batch 
         size, C corresponds to the number of channels, H - to input
         height, and W - to input width.
+
+    Be default, this class initializes the following attributes which 
+    can be changed after initialization of the class (but, typically, 
+    should not be changed):
     
     Attributes:
-        WEIGHTS_FILENAME (str): The constant specifying the name of 
-            `.pth` file from which the weights for this model should be 
-            loaded. Defaults to 'bise_parser.pth'.
+        attr_join_by_and (bool): Whether to add a face image to 
+            an attribute group if the face meets all the specified 
+            attributes in a list (joined by and) of at least one of 
+            the attributes (joined by or). Please read the definition 
+            of  `attr_groups` to get a clearer picture. In most cases, 
+            this should be set True - if the attributes in a group 
+            list are negative, this will ensure the selected face will 
+            match none of the specified attributes. Also, if you want 
+            to join the attributes by or (any), then separate 
+            single-attribute groups can be created and manually merged 
+            into one. Defaults to True.
+        attr_threshold (int): Threshold, based on which the 
+            attribute is determined as present in the face image. For 
+            instance, if the threshold is 5, then at least 6 pixels 
+            must be labeled of the same kind of attribute for that 
+            attribute to be considered present in the face image. 
+            Defaults to 5.
+        mask_threshold (int): Threshold, based on which the 
+            mask is considered to be a proper mask. For instance, if 
+            the threshold is 15, then face images for which the number 
+            of pixels with the values corresponding to a specified 
+            mask group (face attributes) is less than or equal to 15 
+            will be ignored and image-mask pair for that mask category 
+            will not be generated. Defaults to 15.
+        mean (list[float]): The list of mean values for each 
+            input channel. The pixel values should be shifted by those 
+            quantities during inference since this normalization was 
+            applied during training. Defaults to 
+            [0.485, 0.456, 0.406].
+        std (list[float]): The list of standard deviation values 
+            for each input channel. The pixel values should be scaled 
+            by those quantities during inference since this 
+            normalization was applied during training. Defaults to 
+            [0.229, 0.224, 0.225].
     """
+    #: WEIGHTS_FILENAME (str): The constant specifying the name of 
+    #: ``.pth`` file from which the weights for this model should be 
+    #: loaded. Defaults to "bise_parser.pth".
     WEIGHTS_FILENAME = "bise_parser.pth"
 
     def __init__(
@@ -85,53 +127,15 @@ class BiSeNet(nn.Module, LoadMixin):
     ):
         """Initializes BiSeNet model.
 
-        First it assigns the passed values as attributes. Be default,
-        it also initializes the following variables which can be changed
-        after initialization of the class (but, typically, should not be
-        changed):
-            * `attr_join_by_and` (bool): Whether to add a face image to 
-              an attribute group if the face meets all the specified 
-              attributes in a list (joined by and) of at least one of 
-              the attributes (joined by or). Please read the definition 
-              of  `attr_groups` to get a clearer picture. In most cases, 
-              this should be set True - if the attributes in a group 
-              list are negative, this will ensure the selected face will 
-              match none of the specified attributes. Also, if you want 
-              to join the attributes by or (any), then separate 
-              single-attribute groups can be created and manually merged 
-              into one. Defaults to True.
-            * `attr_threshold` (int): Threshold, based on which the 
-              attribute is determined as present in the face image. For 
-              instance, if the threshold is 5, then at least 6 pixels 
-              must be labeled of the same kind of attribute for that 
-              attribute to be considered present in the face image. 
-              Defaults to 5.
-            * `mask_threshold` (int): Threshold, based on which the 
-              mask is considered to be a proper mask. For instance, if 
-              the threshold is 15, then face images for which the number 
-              of pixels with the values corresponding to a specified 
-              mask group (face attributes) is less than or equal to 15 
-              will be ignored and image-mask pair for that mask category 
-              will not be generated. Defaults to 15.
-            * `mean` (list[float]): The list of mean values for each 
-              input channel. The pixel values should be shifted by those 
-              quantities during inference since this normalization was 
-              applied during training. Defaults to 
-              [0.485, 0.456, 0.406].
-            * `std` (list[float]): The list of standard deviation values 
-              for each input channel. The pixel values should be scaled 
-              by those quantities during inference since this 
-              normalization was applied during training. Defaults to 
-              [0.229, 0.224, 0.225].
-        
-        Then this method initializes BiSeNet layers required for face 
-        parsing, i.e., labeling face parts.
+        First it assigns the passed values as attributes. Then this 
+        method initializes BiSeNet layers required for face parsing, 
+        i.e., labeling face parts.
 
         Note:
             Check class definition for the possible face attribute 
             values and examples of groups. Also note that all the 
             specified variables here are mainly relevant only for 
-            :py:meth:`~BiSeNet.predict`.
+            :meth:`predict`.
 
         Args:
             attr_groups: Dictionary specifying attribute groups, based 
@@ -167,7 +171,7 @@ class BiSeNet(nn.Module, LoadMixin):
                 memory errors. This is a convenience variable because 
                 batch size typically corresponds to the number of images 
                 for a single inference, but the input given in 
-                :py:meth:`~BiSeNet.predict` might have a larger batch 
+                :meth:`predict` might have a larger batch 
                 size because it represents the number of faces, many of 
                 which can come from just a single image. Defaults to 8.
         """
@@ -224,22 +228,22 @@ class BiSeNet(nn.Module, LoadMixin):
             parse_preds: Face parsing predictions of shape (N, H, W) 
                 with integer values indicating pixel categories.
             attr_groups: The dictionary with keys corresponding to 
-                attribute group names (they match `self.attr_groups` 
+                attribute group names (they match ``self.attr_groups`` 
                 keys) and values corresponding to indices that map face
-                images from other batches of `parse_preds` to the
+                images from other batches of ``parse_preds`` to the
                 corresponding group. This is the dictionary that is 
                 extended and returned.
             offset: The offset to add to each index. Originally, the
                 indices will correspond only to the face parsings in the 
-                current `parse_preds` batch and the offset allows to 
+                current ``parse_preds`` batch and the offset allows to 
                 generalize the each index by offsetting it by the 
                 previous number of processes face parsings, i.e., the 
-                offset is the number of previous batches (`parse_preds`) 
-                times the batch size.
+                offset is the number of previous batches 
+                (``parse_preds``) times the batch size.
         Returns:
-            Similar to `attr_groups`, it is the dictionary with the same 
-            keys but values (which are lists of indices) may be extended 
-            with additional indices.
+            Similar to ``attr_groups``, it is the dictionary with the 
+            same keys but values (which are lists of indices) may be 
+            extended with additional indices.
         """
         # Specify function/criteria to join the attributes in a list
         att_join = torch.all if self.attr_join_by_and else torch.any
@@ -279,28 +283,28 @@ class BiSeNet(nn.Module, LoadMixin):
             parse_preds: Face parsing predictions of shape (N, H, W) 
                 with integer values indicating pixel categories.
             mask_groups: The dictionary with keys corresponding to 
-                mask group names (they match `self.mask_groups` keys)
+                mask group names (they match ``self.mask_groups`` keys)
                 and values corresponding to tuples where the first value 
                 is a list of indices that map face images from other 
-                batches of `parse_preds` to the corresponding group and 
-                the second is a list of corresponding masks as numpy 
-                arrays of shape (H, W) of type np.uint8 with 255 at
-                pixels that match the mask group specification and 0
-                elsewhere. This is the dictionary that is extended and 
-                returned.
+                batches of ``parse_preds`` to the corresponding group 
+                and the second is a list of corresponding masks as numpy 
+                arrays of shape (H, W) of type :attr:`numpy.uint8` with 
+                255 at pixels that match the mask group specification 
+                and 0 elsewhere. This is the dictionary that is extended 
+                and returned.
             offset: The offset to add to each index. Originally, the
                 indices will correspond only to the face parsings in the 
-                current `parse_preds` batch and the offset allows to 
+                current ``parse_preds`` batch and the offset allows to 
                 generalize the each index by offsetting it by the 
                 previous number of processes face parsings, i.e., the 
-                offset is the number of previous batches (`parse_preds`) 
-                times the batch size.
+                offset is the number of previous batches 
+                (``parse_preds``) times the batch size.
 
         Returns:
-            Similar to `mask_groups`, it is the dictionary with the same 
-            keys but values (which are tuples of a list of indices and a 
-            list of masks) may be extended with additional indices and 
-            masks.
+            Similar to ``mask_groups``, it is the dictionary with the 
+            same keys but values (which are tuples of a list of indices 
+            and a list of masks) may be extended with additional indices 
+            and masks.
         """
         # Retrieve threshold (shorter name)
         threshold = self.mask_threshold
@@ -329,9 +333,9 @@ class BiSeNet(nn.Module, LoadMixin):
         """Predicts attribute and mask groups for face images.
 
         This method takes a batch of face images groups them according 
-        to the specifications in `self.attr_groups` and 
-        `self.mask_groups`. For more information on how it works, see 
-        this class' specification :py:class:`~BiSeNet`. It returns 2 
+        to the specifications in ``self.attr_groups`` and 
+        ``self.mask_groups``. For more information on how it works, see 
+        this class' specification :class:`BiSeNet`. It returns 2 
         groups maps - one for grouping face images to different
         attribute categories, e.g., 'with glasses', 'no accessories' and 
         the other for grouping images to different mask groups, e.g., 
@@ -346,21 +350,23 @@ class BiSeNet(nn.Module, LoadMixin):
 
         Returns:
             A tuple of 2 dictionaries (either can be None):
-                1. `attr_groups` - each key represents attribute 
+
+                1. ``attr_groups`` - each key represents attribute 
                    category and each value is a list of indices 
-                   indicating which  samples from `images` batch belong 
-                   to that category. It can be None if 
-                   `self.attr_groups` is None.
+                   indicating which  samples from ``images`` batch 
+                   belong to that category. It can be None if 
+                   ``self.attr_groups`` is None.
                 2. `mask_groups` - each key represents attribute (mask) 
                    category and each value is a tuple where the first 
                    element is a list of indices indicating which samples 
-                   from `images` batch belong to that mask group and the 
-                   second element is a corresponding batch of masks of 
-                   shape (N, H, W) of type np.uint8 with values of 
-                   either 0 or 255. The masks are presented in that 
-                   order as the indices indicate which face images to 
-                   take for that mask group. It can be None if 
-                   `self.mask_groups` is None.
+                   from ``images`` batch belong to that mask group and 
+                   the second element is a corresponding batch of masks 
+                   of shape (N, H, W) of type :attr:`numpy.uint8` with 
+                   values of either 0 or 255. The masks are presented in 
+                   that order as the indices indicate which face images 
+                   to  take for that mask group. It can be None if 
+                   ``self.mask_groups`` is None.
+
         """
         # Initialize groups as None, a helper offset
         attr_groups, mask_groups, offset = None, None, 0

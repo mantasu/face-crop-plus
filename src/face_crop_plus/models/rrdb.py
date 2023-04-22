@@ -14,25 +14,24 @@ class RRDBNet(nn.Module, LoadMixin):
     images. The images are up-scaled 4 times and then resized to their 
     original size - this results in less blurry faces.
 
-    This class also inherits `load` method from `LoadMixin` class. The 
-    method takes a device on which to load the model and loads the 
-    model with a default state dictionary loaded from `WEIGHTS_FILENAME` 
-    file. It sets this model to eval mode and disables gradients.
+    This class also inherits ``load`` method from ``LoadMixin`` class. 
+    The method takes a device on which to load the model and loads the 
+    model with a default state dictionary loaded from 
+    ``WEIGHTS_FILENAME`` file. It sets this model to eval mode and 
+    disables gradients.
 
     For more information on how RetinaFace model works, see this repo:
-    <https://github.com/cszn/BSRGAN>. Most of the code was taken from 
-    that repository.
+    `BSRGAN <https://github.com/cszn/BSRGAN>`_. Most of the code was 
+    taken from that repository.
     
     Note:
         Whenever an input shape is mentioned, N corresponds to batch 
         size, C corresponds to the number of channels, H - to input
         height, and W - to input width.
-    
-    Attributes:
-        WEIGHTS_FILENAME (str): The constant specifying the name of 
-            `.pth` file from which the weights for this model should be 
-            loaded. Defaults to 'bsrgan_x4_enhancer.pth'.
     """
+    #: WEIGHTS_FILENAME (str): The constant specifying the name of 
+    #: ``.pth`` file from which the weights for this model should be 
+    #: loaded. Defaults to "bsrgan_x4_enhancer.pth".
     WEIGHTS_FILENAME = "bsrgan_x4_enhancer.pth"
 
     def __init__(self, min_face_factor: float = 0.001):
@@ -92,7 +91,7 @@ class RRDBNet(nn.Module, LoadMixin):
 
         Takes a batch of images and sets of landmarks for each image and 
         enhances the quality of those images for which the average face 
-        area factor is lower than `self.min_face_factor`. The face 
+        area factor is lower than ``self.min_face_factor``. The face 
         factor is computed by dividing the face area (computed by 
         multiplying the width and the height of the face, specified by 
         left-eye, right-eye, left-mouth, right-mouth landmark 
@@ -108,19 +107,19 @@ class RRDBNet(nn.Module, LoadMixin):
                 float values from 0.0 to 255.0. It must be on the same 
                 device as this model. It can also be a list of tensors
                 of different shapes.
-            landmarks: Landmarks batch of shape (num_faces, 5, 2) used 
-                to compute average face area for each image. If None, 
-                then every image will be enhanced.
+            landmarks: Landmarks batch of shape (``num_faces``, 5, 2) 
+                used to compute average face area for each image. If 
+                None, then every image will be enhanced.
             indices: Indices list mapping each set of landmarks to a 
-                specific image in `images` batch (multiple sets of 
+                specific image in ``images`` batch (multiple sets of 
                 landmarks can come from the same image). If None, then 
                 every image will be enhanced.
 
         Returns:
-            The same image batch as `images` - the shape is (N, 3, H, W)
-            channels are in RGB and values range from 0.0 to 255.0. The 
-            only difference is that some of the images are of much 
-            higher quality, i.e., less blurry.
+            The same image batch as ``images`` - the shape is 
+            (N, 3, H, W) channels are in RGB and values range from 
+            0.0 to 255.0. The only difference is that some of the images 
+            are of much higher quality, i.e., less blurry.
         """
         for i in range(len(images)):
             if landmarks is None or indices is None:

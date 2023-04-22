@@ -14,63 +14,63 @@ class RetinaFace(nn.Module, LoadMixin):
     of images and filter them based on strategy, e.g., "all landmarks in 
     the image", "a single set of landmarks per image of the largest
     face". For more information, see the main method of this class
-    :py:meth:`~RetinaFace.predict`. For main attributes, see
-    :py:meth:`~RetinaFace.__init__`.
+    :meth:`predict`. For main attributes, see :meth:`__init__`.
 
-    This class also inherits `load` method from `LoadMixin` class. The 
-    method takes a device on which to load the model and loads the 
-    model with a default state dictionary loaded from `WEIGHTS_FILENAME` 
-    file. It sets this model to eval mode and disables gradients.
+    This class also inherits ``load`` method from ``LoadMixin`` class. 
+    The method takes a device on which to load the model and loads the 
+    model with a default state dictionary loaded from 
+    ``WEIGHTS_FILENAME`` file. It sets this model to eval mode and 
+    disables gradients.
 
     For more information on how RetinaFace model works, see this repo:
-    <https://github.com/biubug6/Pytorch_Retinaface>. Most of the code 
-    was taken from that repository.
+    `PyTorch Retina Face <https://github.com/biubug6/Pytorch_Retinaface>`_. 
+    Most of the code was taken from that repository.
 
     Note:
         Whenever an input shape is mentioned, N corresponds to batch 
         size, C corresponds to the number of channels, H - to input
-        height, and W - to input width. `out_dim` corresponds to the
+        height, and W - to input width. ``out_dim`` corresponds to the
         total guesses (the number of priors) the model made about each
         sample. Within those guesses, there typically exists at least 1 
         face but can be more. By default, it should be 43,008.
     
+    Be default, this class initializes the following attributes which 
+    can be changed after initialization of the class (but, typically, 
+    should not be changed):
+
     Attributes:
-        WEIGHTS_FILENAME (str): The constant specifying the name of 
-            `.pth` file from which the weights for this model should be 
-            loaded. Defaults to 'retinaface_detector.pth'.
+        nms_threshold (float): The threshold, based on which 
+            multiple bounding box or landmark predictions for the same 
+            face are merged into one. Defaults to 0.4.
+        variance (list[int]): The variance of the bounding boxes 
+            used to undo the encoding of coordinates of raw  bounding 
+            box and landmark predictions.
     """
+    #: WEIGHTS_FILENAME (str): The constant specifying the name of 
+    #: ``.pth`` file from which the weights for this model should be 
+    #: loaded. Defaults to "retinaface_detector.pth".
     WEIGHTS_FILENAME = "retinaface_detector.pth"
 
     def __init__(self, strategy: str = "all", vis: float = 0.6):
-        """Initializes RetinaFace model.
-
-        First it assigns the passed values as attributes. Be default,
-        it also initializes the following variables which can be changed
-        after initialization of the class (but, typically, should not be
-        changed):
-            * `nms_threshold` (float): The threshold, based on which 
-              multiple bounding box or landmark predictions for the same 
-              face are merged into one. Defaults to 0.4.
-            * `variance` (list[int]): The variance of the bounding boxes 
-              used to undo the encoding of coordinates of raw  bounding 
-              box and landmark predictions.
+        """Initializes RetinaFace model.            
         
-        Then this method initializes ResNet-50 backbone and further 
+        This method initializes ResNet-50 backbone and further 
         layers required for face detection and bbox/landm predictions.
 
         Args:
             strategy: The strategy used to retrieve the landmarks when
-                :py:meth:`~RetinaFace.predict` is called. The available 
-                options are:
-                    * 'all' - landmarks for all faces per single image
+                :meth:`predict` is called. The available options are:
+
+                    * "all" - landmarks for all faces per single image
                       (single batch entry) will be considered.
-                    * 'best' - landmarks for a single face with the
+                    * "best" - landmarks for a single face with the
                       highest confidence score per image will be 
                       considered.
-                    * 'largest' - landmarks for a single largest face
+                    * "largest" - landmarks for a single largest face
                       per image will be considered.
+
                 The most efficient option is 'best' and the least
-                efficient is 'largest'. Defaults to "all".
+                efficient is "largest". Defaults to "all".
             vis: The visual threshold, i.e., minimum confidence score,
                 for a face to be considered an actual face. Lower
                 scores will allow the detection of more faces per image
@@ -130,7 +130,7 @@ class RetinaFace(nn.Module, LoadMixin):
             (N, out_dim, 2) with values between 0 and 1 representing
             probabilities, the second element is bounding boxes of shape 
             (N, out_dim, 4) with unbounded values and the last element 
-            is landmarks of shape (N, out_dim, 10) with unbounded
+            is landmarks of shape (N, ``out_dim``, 10) with unbounded
             values.
         """
         # Extract FPN + SSH features
@@ -220,8 +220,9 @@ class RetinaFace(nn.Module, LoadMixin):
         """Filters predictions for identified faces for each sample.
         
         This method works as follows:
+
             1. First, it filters out bad predictions based on
-               `self.vis_threshold`.
+               ``self.vis_threshold``.
             2. Then it gathers all the remaining predictions across the
                batch dimension, i.e., the batch dimension becomes not
                the number of samples but the number of filtered out
@@ -230,17 +231,11 @@ class RetinaFace(nn.Module, LoadMixin):
                sorting each set of confidence scores from best to worst.
             4. For each set of confidence scores, it identifies distinct 
                faces and keeps the record of which indices to keep. At 
-               this stage it uses `self.nms_threshold` to remove the 
+               this stage it uses ``self.nms_threshold`` to remove the 
                duplicate face predictions.
             5. Finally, it applies the kept indices for each person
                (each face) to select corresponding bounding boxes and
                landmarks.
-
-        Note:
-            N corresponds to batch size and `out_dim` corresponds to
-            the total guesses that the model made about each sample.
-            Within those guesses, there typically exists at least 1
-            face but can be more. By default, it should be 43,008.
 
         Args:
             scores: The confidence score predictions of shape
@@ -255,12 +250,12 @@ class RetinaFace(nn.Module, LoadMixin):
 
         Returns:
             A tuple where the first element is a torch tensor of shape
-            (num_faces, 4), the second element is a torch tensor of
-            shape (num_faces, num_landmarks * 2) and the third element
-            is a list of length num_faces. First and second elements
-            correspond to bounding boxes and landmarks for each face
-            across all samples and the third element provides an index
-            for each bounding box/set of landmarks that identifies
+            (``num_faces``, 4), the second element is a torch tensor of
+            shape (``num_faces``, ``num_landmarks`` * 2) and the third 
+            element is a list of length ``num_faces``. First and second 
+            elements correspond to bounding boxes and landmarks for each 
+            face across all samples and the third element provides an 
+            index for each bounding box/set of landmarks that identifies
             which sample that box/set (or that face) is extracted from
             (because each sample can have multiple faces).
         """
@@ -319,49 +314,51 @@ class RetinaFace(nn.Module, LoadMixin):
         This method takes a batch of landmarks and bounding boxes (one
         for each face) filters only specific landmarks by a specific
         strategy. Here are the following cases of strategy:
-            * 'all' - effectively, nothing is done and simply the
+
+            * "all" - effectively, nothing is done and simply the
               already passed values `landms` and `idx` are returned 
               without any changes.
-            * 'best' - the very first set of landmarks for each image 
+            * "best" - the very first set of landmarks for each image 
               image is returned (the first set is the best set because
               the landmarks were sorted when duplicates were filtered
-              out in :py:meth:`~RetinaFace.filter_preds`). This means
+              out in :meth:`filter_preds`). This means
               the returned indices list is unique, e.g., goes from 
-              `[0, 0, 0, 1, 1, 2, 3, 3]` to `[0, 1, 2, 3]`.
-            * 'largest' - similar to 'best', except that this strategy
+              ``[0, 0, 0, 1, 1, 2, 3, 3]`` to ``[0, 1, 2, 3]``.
+            * "largest" - similar to 'best', except that this strategy
               requires performing additional computation to find out the 
               largest face based on the area of bounding boxes. Thus the 
               length of the `idx` list (which is equal to the number of 
               sets of landmarks) is the same as for 'best' strategy,
               except not the first (best) faces (actually, their
               landmarks) for each image but selected faces are returned.
-        
+
         Note:
-            Strategy 'best' is most memory efficient, strategy 'largest' 
-            is least time efficient. Strategy 'all' is as fast as 'best' 
+            Strategy "best" is most memory efficient, strategy "largest" 
+            is least time efficient. Strategy "all" is as fast as "best" 
             but takes up more space.
 
         Args:
-            landms: Landmarks batch of shape (num_faces, num_landm * 2).
-            bboxes: Bounding boxes batch of shape (num_faces, 4).
+            landms: Landmarks batch of shape 
+                (``num_faces``, ``num_landm`` * 2).
+            bboxes: Bounding boxes batch of shape (``num_faces``, 4).
             idx: Indices where each index maps to an image from
                 which some face prediction (landmarks and bounding box) 
                 was retrieved. For instance if the 2nd element of idx is 
-                1, that means that the 2nd element of `landms` and the
-                2nd element of `bboxes` correspond to the 1st image. 
+                1, that means that the 2nd element of ``landms`` and the
+                2nd element of ``bboxes`` correspond to the 1st image. 
                 This list is ascending, meaning the elements are
                 grouped and increase, for example, the list may look
-                like this: `[0, 0, 1, 2, 3, 3, 3, 3, 4, 4, 5, 6, 6]`.
+                like this: ``[0, 0, 1, 2, 3, 3, 3, 3, 4, 4, 5, 6, 6]``.
 
         Raises:
             ValueError: If the strategy is not supported.
 
         Returns:
             A tuple where the first element is torch tensor of shape 
-            (num_faces, num_landm * 2) representing the selected sets of 
-            landmarks and the second element is a list of indices where 
-            each index maps a corresponding set of landmarks (face) to 
-            an image identified by that index.
+            (``num_faces``, ``num_landm`` * 2) representing the selected 
+            sets of landmarks and the second element is a list of 
+            indices where each index maps a corresponding set of 
+            landmarks (face) to an image identified by that index.
         """
         if len(idx) == 0:
             # If no predicted landmarks, return empty lists
@@ -417,22 +414,23 @@ class RetinaFace(nn.Module, LoadMixin):
         This method takes a batch of images, detect all visible faces, 
         predicts bounding boxes and landmarks for each face and then 
         filters those faces according to a specific strategy - see
-        :py:meth:`~RetinaFace.take_by_strategy` for more info. Finally, 
-        it returns those selected sets of landmarks and corresponding 
-        indices that map each set to a specific image where the face was 
-        originally detected.
+        :meth:`take_by_strategy` for more info. Finally, it returns 
+        those selected sets of landmarks and corresponding indices that 
+        map each set to a specific image where the face was originally 
+        detected.
 
         The predicted sets of landmarks are 5-point coordinates (they  
         are specified from an observer's viewpoint, meaning that, for 
         instance, left eye is the eye on the left hand-side of the image 
         rather than the left eye from the person's to whom the eye 
         belongs perspective):
-            1. (x1, y1) - coordinate of the left eye
-            2. (x2, y2) - coordinate of the right eye
-            3. (x3, y3) - coordinate of the nose tip
-            4. (x4, y4) - coordinate of the left mouth corner
-            5. (x5, y5) - coordinate of the right mouth corner
-        
+
+            1. **(x1, y1)** - coordinate of the left eye
+            2. **(x2, y2)** - coordinate of the right eye
+            3. **(x3, y3)** - coordinate of the nose tip
+            4. **(x4, y4)** - coordinate of the left mouth corner
+            5. **(x5, y5)** - coordinate of the right mouth corner
+
         The coordinates are with respect to the sizes of the images 
         (typically padded) provided as an input to this method.
 
@@ -443,7 +441,7 @@ class RetinaFace(nn.Module, LoadMixin):
 
         Returns:
             A tuple where the first element is a numpy array of shape 
-            (num_faces, 5, 2) representing the selected sets of 
+            (``num_faces``, 5, 2) representing the selected sets of 
             landmark coordinates and the second element is a list of
             corresponding indices mapping each face to an image it comes
             from.
@@ -466,7 +464,6 @@ class RetinaFace(nn.Module, LoadMixin):
         filtered = self.filter_preds(scores, bboxes, landms)
         landmarks, indices = self.take_by_strategy(*filtered)
 
-        # if len(landmarks) > 0:
         # Stack landmarks across batch dim and reshape as coords
         landmarks = landmarks.view(-1, 5, 2).cpu().numpy()
 

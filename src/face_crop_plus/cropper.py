@@ -37,7 +37,7 @@ class Cropper():
 
         1. **Face cropping** - automatic face alignment and cropping 
            based on landmarks. The landmarks can either be predicted via 
-           face detection model (see :class:`RetinaFace`) or they 
+           face detection model (see :class:`.RetinaFace`) or they 
            can be provided as txt, csv, json etc. file. It is possible 
            to control face factor in the extracted images and strategy 
            of extraction (e.g., largest face, all faces per image).
@@ -47,7 +47,7 @@ class Cropper():
            faces, if zoomed in, is low. Quality enhancement feature 
            allows to remove the blurriness. It can also enhance the 
            quality of every image, if desired (see 
-           :py:class:`~RRDBNet`).
+           :class:`.RRDBNet`).
         3. **Face parsing** - automatic face attribute parsing and 
            grouping to sub-directories according selected attributes. 
            Attributes can indicate to group faces that contain specific 
@@ -58,8 +58,8 @@ class Cropper():
            neckless etc. It is also possible to generate masks for 
            selected face attributes, e.g., "glasses", 
            "eyes and eyebrows". For more intuition on how grouping 
-           works, see :py:class:`~BiSeNet` and 
-           :py:meth:`~Cropper.save_groups`.
+           works, see :class:`.BiSeNet` and 
+           :meth:`save_groups`.
 
     The class is designed to perform all or some combination of the 
     functions in one go, however, each feature is independent of one 
@@ -82,57 +82,58 @@ class Cropper():
     Auto face cropping (with face factor) and quality enhancement:
         >>> cropper = Cropper(face_factor=0.7, enh_threshold=0.01)
         >>> cropper.process_dir(input_dir="path/to/images")
-    
+
     Very fast cropping with already known landmarks (no enhancement):
         >>> cropper = Cropper(landmarks="path/to/landmarks.txt", 
                               num_processes=24,
                               enh_threshold=None)
         >>> cropper.process_dir(input_dir="path/to/images")
-    
+
     Face cropping to attribute groups to custom output dir:
         >>> attr_groups = {"glasses": [6], "no_glasses_hats": [-6, -18]}
         >>> cropper = Cropper(attr_groups=attr_groups)
         >>> inp, out = "path/to/images", "path/to/parent/out/dir"
         >>> cropper.process_dir(input_dir=inp, output_dir=out)
-    
+
     Face cropping and grouping by face attributes (+ generating masks):
         >>> groups = {"glasses": [6], "eyes_and_eyebrows": [2, 3, 4, 5]}
         >>> cropper = Cropper(output_format="png", mask_groups=groups)
         >>> cropper.process_dir("path/to/images")
 
     For grouping by face attributes, see documented face attribute 
-    indices in :py:class:`~BiSeNet`.
+    indices in :class:`.BiSeNet`.
 
     Class Attributes
     ----------------
 
     For how to initialize the class and to understand its functionality 
     better, please refer to class attributes initialized via 
-    :py:meth:`~Cropper.__init__`. Here, further class attributes are 
-    described automatically initialized via 
-    :py:meth:`~Cropper._init_models` and 
-    :py:meth:`~Cropper._init_landmarks_target`.
+    :meth:`__init__`. Here, further class attributes are 
+    described automatically initialized via  :meth:`_init_models` and 
+    :meth:`_init_landmarks_target`.
 
     Attributes:
-        det_model (RetinaFace): Face detection model (torch.nn.Module) 
-            that is capable of detecting faces and predicting landmarks 
-            used for face alignment. See :py:class:`~RetinaFace`.
+        det_model (RetinaFace): Face detection model 
+            (:class:`torch.nn.Module`) that is capable of detecting 
+            faces and predicting landmarks used for face alignment. See 
+            :class:`.RetinaFace`.
         enh_model (RRDBNet): Image quality enhancement model 
             (torch.nn.Module) that is capable of enhancing the quality 
             of images with faces. It can automatically detect which 
             faces to enhance based on average face area in the image, 
-            compared to the whole image area. See :py:class:`~RRDBNet`.
+            compared to the whole image area. See :class:`.RRDBNet`.
         par_model (BiSeNet): Face parsing model (torch.nn.Module) that 
             is capable of classifying pixels according to specific face 
             attributes, e.g., "left_eye", "earring". It is able to group 
             faces to different groups and generate attribute masks. See 
-            :py:class:`~BiSeNet`.
-        landmarks_target (np.ndarray): Standard normalized landmarks of 
-            shape  (`self.num_std_landmarks`, 2). These are scaled by 
-            `self.face_factor` and used as ideal landmark coordinates 
-            for the extracted faces. In other words, they are reference 
-            landmarks used to estimate the transformation of an image 
-            based on some actual set of face landmarks for that image.
+            :class:`.BiSeNet`.
+        landmarks_target (numpy.ndarray): Standard normalized landmarks 
+            of shape  (``self.num_std_landmarks``, 2). These are scaled 
+            by ``self.face_factor`` and used as ideal landmark 
+            coordinates for the extracted faces. In other words, they 
+            are reference landmarks used to estimate the transformation 
+            of an image based on some actual set of face landmarks for 
+            that image.
     """
     def __init__(
         self,
@@ -178,7 +179,7 @@ class Cropper():
                 dimensions will always match either the specified width 
                 or height). The shorter dimension would afterwards be 
                 padded - for more information on how it works, see 
-                :py:func:`~utils.create_batch_from_files`. Defaults to 
+                :func:`.utils.create_batch_from_files`. Defaults to 
                 1024.
             face_factor: The fraction of the face area relative to the 
                 output image. Defaults to 0.65.
@@ -188,11 +189,11 @@ class Cropper():
                     * "all" - all faces will be extracted form each 
                       image.
                     * "best" - one face with the largest confidence 
-                       score will be extracted from each image.
+                      score will be extracted from each image.
                     * "largest" - one face with the largest face area 
-                       will be extracted from each image.
+                      will be extracted from each image.
 
-                For more info, see :py:meth:`~RetinaFace.__init__`. 
+                For more info, see :meth:`.RetinaFace.__init__`. 
                 Defaults to "largest".
             padding: The padding type (border mode) to apply when 
                 cropping out faces. If faces are near edge, some part of 
@@ -212,7 +213,7 @@ class Cropper():
                 minimal perspective changes. However, most of the time 
                 this should be set to False to preserve the face 
                 perspective. For more details, see 
-                :py:meth:`~Cropper.crop_align`. Defaults to False.
+                :meth:`.crop_align`. Defaults to False.
             landmarks: If landmarks are already known, they should be 
                 specified via this variable. If specified, landmark 
                 estimation will not be performed. There are 2 ways to 
@@ -230,15 +231,16 @@ class Cropper():
                        in x1, y1, x2, y2, ... format. For more details 
                        about the possible file formats and how they are 
                        parsed, see 
-                       :py:func:`~utils.parse_landmarks_file`.
+                       :func:`~.utils.parse_landmarks_file`.
                     2. As a tuple of 2 numpy arrays. The first one is of 
-                       shape (num_faces, num_landm, 2) of type 
-                       np.float32 and represents the landmarks of every
-                       face that is going to be extracted from images. 
-                       The second is a numpy array of shape (num_faces,) 
-                       of type 'U' (numpy string type) where each value 
-                       specifies a file name to which a corresponding 
-                       set of landmarks belongs.
+                       shape (``num_faces``, ``num_landm``, 2) of type 
+                       :attr:`numpy.float32` and represents the 
+                       landmarks of every face that is going to be 
+                       extracted from images. The second is a numpy 
+                       array of shape (``num_faces``,) of type 
+                       :class:`numpy.str_` where each value specifies a 
+                       file name to which a corresponding set of 
+                       landmarks belongs.
 
                 If not specified, 5 landmark coordinates will be 
                 estimated for each face automatically. Defaults to None.
@@ -249,7 +251,7 @@ class Cropper():
                 values specify which attribute indices belong (or don't 
                 belong, if negative) to that group, e.g., [6], 
                 [-6, -9, -15]. For more information, see 
-                :py:class:`~BiSeNet` and :py:meth:`Cropper.save_groups`. 
+                :class:`.BiSeNet` and :meth:`save_groups`. 
                 If not provided, output images will not be grouped by 
                 attributes and no attribute sub-folders will be created
                 in the desired output directory. Defaults to None.
@@ -263,12 +265,12 @@ class Cropper():
                 but also black and white face attribute masks (white 
                 pixels indicating the presence of a mask attribute). For 
                 more details, see For more info, see 
-                :py:class:`~BiSeNet` and :py:meth:`Cropper.save_groups`.
+                :class:`.BiSeNet` and :py:meth:`save_groups`.
                 If not provided, no grouping is applied. Defaults to 
                 None.
             det_threshold: The visual threshold, i.e., minimum 
                 confidence score, for a detected face to be considered 
-                an actual face. See :py:meth:`~RetinaFace.__init__` for 
+                an actual face. See :meth:`.RetinaFace.__init__` for 
                 more details. If None, no face detection will be 
                 performed. Defaults to 0.6.
             enh_threshold: Quality enhancement threshold that tells when 
@@ -341,16 +343,16 @@ class Cropper():
         """Initializes detection, enhancement and parsing models.
 
         The method initializes 3 models:
-            1. If `self.det_threshold` is provided and no landmarks are 
-               known in advance, the detection model is initialized to 
-               estimate 5-point landmark coordinates. For more info, see 
-               :py:class:`~RetinaFace`.
-            2. If `self.enh_threshold` is provided, the quality 
+            1. If ``self.det_threshold`` is provided and no landmarks 
+               are known in advance, the detection model is initialized 
+               to estimate 5-point landmark coordinates. For more info, 
+               see :class:`.RetinaFace`.
+            2. If ``self.enh_threshold`` is provided, the quality 
                enhancement model is initialized. For more info, see
-               :py:class:`~RRDBNet`.
-            3. If `self.attr_groups` or `self.mask_groups` is provided,
-               then face parsing model is initialized. For more info, 
-               see :py:class:`~BiSeNet`.
+               :class:`.RRDBNet`.
+            3. If ``self.attr_groups`` or ``self.mask_groups`` is 
+               provided, then face parsing model is initialized. For 
+               more info, see :class:`.BiSeNet`.
 
         Note:
             This is a useful initializer function if multiprocessing is 
@@ -401,7 +403,7 @@ class Cropper():
         number of landmarks. Each coordinate in that set is normalized, 
         i.e., x and y values are between 0 and 1. These values are then 
         scaled based on face factor and resized to match the desired 
-        output size as defined by `self.output_size`.
+        output size as defined by ``self.output_size``.
 
         Note:
             Currently, only 5 standard landmarks are supported.
@@ -409,7 +411,7 @@ class Cropper():
         Raises:
             ValueError: If the number of standard landmarks is not 
                 supported. The number of standard landmarks is 
-                `self.num_std_landmarks`.
+                ``self.num_std_landmarks``.
         """
         match self.num_std_landmarks:
             case 5:
@@ -454,28 +456,29 @@ class Cropper():
                arrays of the same length ans the number of sets of 
                landmarks.
 
-        Crucial role in this method plays `self.landmarks_target` which 
-        is the standard set of landmarks used as a reference for the 
-        source landmarks. Target and source landmark sets are used to 
-        estimate transformations of images - each image to which a set 
-        of landmarks (from source landmarks batch) belongs is 
+        Crucial role in this method plays ``self.landmarks_target`` 
+        which is the standard set of landmarks used as a reference for 
+        the source landmarks. Target and source landmark sets are used 
+        to estimate transformations of images - each image to which a 
+        set of landmarks (from source landmarks batch) belongs is 
         transformed such that the area covers the those landmarks as the 
         standard  (target) landmarks set (as ideally as possible). For 
         more details about target landmarks, check 
-        :py:meth:`~Cropper._init_landmarks_target`.
+        :meth:`_init_landmarks_target`.
 
         Note:
-            If `self.allow_skew` is set to True, then facial points will 
-            also be skewed to match `self.landmarks_target` as close as 
-            possible (resulting in, e.g., longer/flatter faces than in 
-            the original images).
+            If ``self.allow_skew`` is set to True, then facial points 
+            will also be skewed to match ``self.landmarks_target`` as 
+            close as possible (resulting in, e.g., longer/flatter faces 
+            than in the original images).
 
         Args:
-            images: Image batch of shape (N, H, W, 3) of type np.uint8 
-                (doesn't matter if RGB or BGR) where each nth image is 
-                transformed to extract face(-s). (H, W) should be 
-                `self.resize_size`. It can also be a list of np.uint8 
-                numpy arrays of different shapes.
+            images: Image batch of shape (N, H, W, 3) of type 
+                :attr:`numpy.uint8` (doesn't matter if RGB or BGR) where 
+                each nth image is transformed to extract face(-s). 
+                (H, W) should be ``self.resize_size``. It can also be a 
+                list of :attr:`numpy.uint8` numpy arrays of different 
+                shapes.
             padding: Padding of shape (N, 4) where the integer values 
                 correspond to the number of pixels padded from each 
                 side: top, bottom, left, right. Padding was originally 
@@ -486,18 +489,19 @@ class Cropper():
                 un-padded.
             indices: Indices list of length num_faces where each index 
                 specifies which image is used to extract faces for each 
-                set of landmarks in `landmarks_source`.
+                set of landmarks in ``landmarks_source``.
             landmarks_source: Landmarks batch of shape 
-                (num_faces, `self.num_std_landmarks`, 2). These are 
+                (num_faces, ``self.num_std_landmarks``, 2). These are 
                 landmark sets of all the desired faces to extract from 
                 the given batch of N images.
 
         Returns:
             A batch of aligned and center-cropped faces where the factor 
             of the area of a face relative to the whole face image area
-            is `self.face_factor`. The output is a numpy array of shape 
-            (N, H, W) of type np.uint8 (same channel structure as for 
-            the input images). (H, W) is defined by `self.output_size`.
+            is ``self.face_factor``. The output is a numpy array of 
+            shape (N, H, W) of type :attr:`numpy.uint8` (same channel 
+            structure as for the input images). (H, W) is defined by 
+            ``self.output_size``.
         """
         # Init list, border mode
         transformed_images = []
@@ -561,15 +565,15 @@ class Cropper():
         Args:
             faces: Face images (cropped and aligned) represented as a
                 numpy array of shape (N, H, W, 3) with values of type
-                np.uint8 ranging from 0 to 255. It may also be face mask 
-                of shape (N, H, W) with values of 255 where some face 
-                attribute is present and 0 elsewhere.
+                :attr:`numpy.uint8` ranging from 0 to 255. It may also 
+                be face mask of shape (N, H, W) with values of 255 where 
+                some face attribute is present and 0 elsewhere.
             file_names: The list of filenames of length N. Each face 
                 comes from a specific file whose name is also used to 
-                save the extracted face. If `self.strategy` allows 
+                save the extracted face. If ``self.strategy`` allows 
                 multiple faces to be extracted from the same file, such 
                 as "all", counters at the end of filenames are added.
-            output_dir: The output directory to save `faces`.
+            output_dir: The output directory to save ``faces``.
         """
         if len(faces) == 0:
             # Just return
@@ -618,8 +622,8 @@ class Cropper():
         accordingly.
 
         Example 1:
-            If neither `attr_groups` nor `mask_groups` are provided, the 
-            face images will be saved according to this structure::
+            If neither ``attr_groups`` nor ``mask_groups`` are provided, 
+            the face images will be saved according to this structure::
 
                 ├── output_dir
                 |    ├── face_image_0.jpg
@@ -627,10 +631,10 @@ class Cropper():
                 |    ...
 
         Example 2:
-            If only `attr_groups` is provided (keys are names describing 
-            common attributes across faces in that group and they are
-            also sub-directories of `output_dir`), the structure is as
-            follows::
+            If only ``attr_groups`` is provided (keys are names 
+            describing common attributes across faces in that group and 
+            they are also sub-directories of ``output_dir``), the 
+            structure is as follows::
 
                 ├── output_dir
                 |    ├── attribute_group_1
@@ -641,9 +645,9 @@ class Cropper():
                 |    ...
 
         Example 3:
-            If only `mask_groups` is provided (keys are names describing 
-            the mask type and they are also sub-directories of
-            `output_dir`), the structure is as follows::
+            If only ``mask_groups`` is provided (keys are names 
+            describing the mask type and they are also sub-directories 
+            of ``output_dir``), the structure is as follows::
 
                 ├── output_dir
                 |    ├── group_1
@@ -661,10 +665,11 @@ class Cropper():
                 |    ...
 
         Example 4:
-            If both `attr_groups` and `mask_groups` are provided, then 
-            all images and masks will first be grouped by attributes and 
-            then by mask groups. The structure is then as follows::
-            
+            If both ``attr_groups`` and ``mask_groups`` are provided, 
+            then all images and masks will first be grouped by 
+            attributes and then by mask groups. The structure is then as 
+            follows::
+
                 ├── output_dir
                 |    ├── attribute_group_1
                 |    |    ├── group_1_mask
@@ -688,11 +693,11 @@ class Cropper():
         Args:
             faces: Face images (cropped and aligned) represented as a
                 numpy array of shape (N, H, W, 3) with values of type
-                np.uint8 ranging from 0 to 255.
+                :attr:`numpy.uint8` ranging from 0 to 255.
             file_names: File names of images from which the faces were 
                 extracted. This value is a numpy array of shape (N,) 
-                with values of type 'U' (numpy string type). Each nth 
-                face in `faces` maps to exactly one file nth name in
+                with values of type :class:`numpy.str_`. Each nth 
+                face in ``faces`` maps to exactly one file nth name in
                 this array, thus there may be duplicate file names
                 (because different faces may come from the same file).
             output_dir: The output directory where the faces or folders 
@@ -704,11 +709,12 @@ class Cropper():
             mask_groups: Face groups by extracted masks. Each key
                 represents group name (describes the mask type) and each 
                 value is a tuple where the first element is a list of 
-                indices identifying faces (from `faces`) that should go 
-                to that group and the second element is a batch of masks
-                corresponding to indexed faces represented as a numpy
-                arrays of shape (N, H, W) with values of type np.uint8 
-                and being either 0 (negative) or 255 (positive).
+                indices identifying faces (from ``faces``) that should 
+                go to that group and the second element is a batch of 
+                masks corresponding to indexed faces represented as 
+                numpy arrays of shape (N, H, W) with values of type 
+                :attr:`numpy.uint8` and being either 0 (negative) or 255 
+                (positive).
         """
         if attr_groups is None:
             # No-name group of idx mapping to all faces
@@ -742,27 +748,33 @@ class Cropper():
         faces and saves them to the output directory. This method works 
         as follows:
 
-            1. Batch generation - a batch of images form the given file 
-               names is generated. Each images is padded and resized to
-               `self.resize_size` while keeping the same aspect ratio.
-            2. Landmark detection - detection model is used to predict 5 
-               landmarks for each face in each image, unless the 
+            1. *Batch generation* - a batch of images form the given 
+               file names is generated. Each images is padded and 
+               resized to ``self.resize_size`` while keeping the same 
+               aspect ratio.
+            2. *Landmark detection* - detection model is used to predict 
+               5 landmarks for each face in each image, unless the 
                landmarks were already initialized  or face alignment + 
                cropping is not needed.
-            3. Image enhancement - some images are enhanced if the faces 
-               compared with the image size are small. If landmarks are 
-               None, i.e., if no alignment + cropping was desired, all 
-               images are enhanced. Enhancement is not done if 
-               `self.enh_threshold` is None.
-            3. Image grouping - each face image is parsed, i.e., a map 
+            3. *Image enhancement* - some images are enhanced if the 
+               faces compared with the image size are small. If 
+               landmarks are None, i.e., if no alignment + cropping was 
+               desired, all images are enhanced. Enhancement is not done 
+               if ``self.enh_threshold`` is None.
+            4. *Image grouping* - each face image is parsed, i.e., a map 
                of face attributes is generated. Based on those 
                attributes, each face image is put to a corresponding 
                group. There may also be mask groups, in which case masks 
                for each image in that group are also generated. Faces 
-               are not parsed if `self.attr_groups` and 
-               `self.mask_groups` are both None.
-            4. Image saving - each face image (and a potential mask) is 
-               saved according to the group structure (if there is any).
+               are not parsed if ``self.attr_groups`` and 
+               ``self.mask_groups`` are both None.
+            5. *Image saving* - each face image (and a potential mask) 
+               is saved according to the group structure (if there is 
+               any).
+        
+        Note:
+            If detection model is not used, then batch is just a list of 
+            loaded images of different dimensions.
 
         Args:
             file_names: The list of image file names (not full paths). 
@@ -776,7 +788,7 @@ class Cropper():
             images, indices, landmarks, paddings = [], [], None, None
 
             for i, file_name in enumerate(file_names):
-                # Make path, load image
+                # Make path, load image, convert to RGB
                 path = os.path.join(input_dir, file_name)
                 image = cv2.cvtColor(cv2.imread(path), cv2.COLOR_BGR2RGB)
 
@@ -848,7 +860,7 @@ class Cropper():
         landmarks are generated and used to optionally align and 
         center-crop faces, and grouping is optionally applied based on
         face attributes. For more details, check 
-        :py:meth:`~Cropper.process_batch`.
+        :meth:`process_batch`.
 
         Note:
             There might be a few seconds delay before the actual 
@@ -860,7 +872,7 @@ class Cropper():
             input_dir: Path to input directory with image files.
             output_dir: Path to output directory to save the extracted 
                 (and optionally grouped to sub-directories) face images. 
-                If None, then the same path as for `input_dir` is used 
+                If None, then the same path as for ``input_dir`` is used 
                 and additionally "_faces" suffix is added to the name.
         """
         if output_dir is None:
@@ -870,6 +882,10 @@ class Cropper():
         # Create batches of image file names in input dir
         files, bs = os.listdir(input_dir), self.batch_size
         file_batches = [files[i:i+bs] for i in range(0, len(files), bs)]
+
+        if len(file_batches) == 0:
+            # Empty
+            return
         
         # Define worker function and its additional arguments
         kwargs = {"input_dir": input_dir, "output_dir": output_dir}

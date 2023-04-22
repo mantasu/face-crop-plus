@@ -21,10 +21,26 @@ release = '1.0.0'
 extensions = [
     "sphinx.ext.todo",
     "sphinx.ext.napoleon",
+    "sphinx_autodoc_typehints",
     "sphinx.ext.viewcode",
     "sphinx.ext.autodoc",
+    "sphinx.ext.autosectionlabel",
+    "sphinx.ext.intersphinx",
 ]
 
+autodoc_default_options = {
+    'members': True,
+    'undoc-members': True,
+    'private-members': True,
+    'special-members': '__init__',
+}
+
+# intersphinx_mapping = {
+#     'python': ('http://docs.python.org/3', None),
+#     # 'np': ('https://numpy.org/doc/stable/', None),
+#     # 'torch': ('https://pytorch.org/docs/stable/', None),
+# }
+napoleon_use_param = True
 templates_path = ['_templates']
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 
