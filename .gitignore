@@ -1,9 +1,12 @@
-# Temp
+# CelebA
+landmark.txt
 img_celeba
 img_celeba_faces
-landmark.txt
 
+# Demo
 demo/input_images_faces
+
+# Build
 build
 _build
 _static

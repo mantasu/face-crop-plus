@@ -35,16 +35,9 @@ autodoc_default_options = {
     'special-members': '__init__',
 }
 
-# intersphinx_mapping = {
-#     'python': ('http://docs.python.org/3', None),
-#     # 'np': ('https://numpy.org/doc/stable/', None),
-#     # 'torch': ('https://pytorch.org/docs/stable/', None),
-# }
 napoleon_use_param = True
 templates_path = ['_templates']
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
-
-
 
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
