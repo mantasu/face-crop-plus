@@ -2,7 +2,7 @@
 Citation
 ========
 
-If you find this package helpful in your research, you can cite the following:
+To cite this work, please use:
 
 .. code-block:: bibtex
 
@@ -13,4 +13,5 @@ If you find this package helpful in your research, you can cite the following:
         publisher = {GitHub},
         journal = {GitHub repository},
         howpublished = {\url{https://github.com/mantasu/face-crop-plus}},
+        doi = {10.5281/zenodo.7856750}
     }
