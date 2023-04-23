@@ -4,7 +4,7 @@ import setuptools
 version = (
     subprocess.run(["git", "describe", "--tags"], stdout=subprocess.PIPE)
     .stdout.decode("utf-8")
-    .strip()
+    .strip()[1:]
 )
 
 with open("README.md", "r", encoding = "utf-8") as f:
