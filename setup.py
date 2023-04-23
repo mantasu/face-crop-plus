@@ -1,19 +1,12 @@
-import subprocess
 import setuptools
-
-version = (
-    subprocess.run(["git", "describe", "--tags"], stdout=subprocess.PIPE)
-    .stdout.decode("utf-8")
-    .strip()[1:]
-)
 
 with open("README.md", "r", encoding = "utf-8") as f:
     long_description = f.read()
 
 setuptools.setup(
     name = "face-crop-plus",
-    version = version,
-    author = "mantasu (Mantas Birškus)",
+    version = "1.0.2",
+    author = "Mantas Birškus",
     author_email = "mantix7@gmail.com",
     license = "MIT",
     description = f"Automatic face aligner and cropper with quality "

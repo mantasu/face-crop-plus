@@ -8,7 +8,7 @@
 
 <p align="center" width="100%">
 
-![Banner](assets/banner.png)
+![Banner](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/banner.png)
 
 </p>
 
@@ -54,7 +54,7 @@ cropper = Cropper(face_factor=0.7, strategy="largest")
 cropper.process_dir(input_dir="path/to/images")
 ```
 
-For a quick demo, you can experiment with [demo.py](demo/demo.py) file:
+For a quick demo, you can experiment with [demo.py](https://github.com/mantasu/face-crop-plus/blob/main/demo/demo.py) file:
 ```bash
 git clone https://github.com/mantasu/face-crop-plus
 cd face-crop-plus/demo
@@ -77,25 +77,25 @@ The main feature is face alignment and cropping. The main arguments that control
     | :--------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
     | `.json`          | Expects a dictionary with the following example entries: `'image.jpg': [x1, y1, ...]`. I.e., keys are image file names and values are flattened arrays of face landmark coordinates. |
     | `.csv`           | Expects comma-separated values of where each line is of the form `image.jpg,x1,y1,...`. Note that it also expects the first line to be a header.                                     |
-    | `.txt` and other | Similar to CSV file, but each line is expected to have space-separated values of the form `image.jpg x1 y1 ...`. No header is expected.                                             |
+    | `.txt` and other | Similar to CSV file, but each line is expected to have space-separated values of the form `image.jpg x1 y1 ...`. No header is expected.                                              |
 
 * `output_size` - the output size of the cropped face images. Can be either a tuple of 2 values (weight, height) or a single value indicating square dimensions
 
     | 200 × 200                           | 300 × 300                           | 300 × 200                           | 200 × 300                           |
     | :---------------------------------: | :---------------------------------: | :---------------------------------: | :---------------------------------: |
-    | ![200x200](assets/size_200x200.jpg) | ![300x300](assets/size_300x300.jpg) | ![300x200](assets/size_300x200.jpg) | ![200x300](assets/size_200x300.jpg) |
+    | ![200x200](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/size_200x200.jpg) | ![300x300](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/size_300x300.jpg) | ![300x200](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/size_300x200.jpg) | ![200x300](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/size_200x300.jpg) |
 
 * `face_factor` - the fraction of the face area relative to the output image. The value is between 0 and 1 and, the larger the value, the larger the face is in the output image.
 
     | 0.4                           | 0.55                            | 0.7                            | 0.85                            |
     | :---------------------------: | :-----------------------------: | :----------------------------: | :-----------------------------: |
-    | ![0.4](assets/factor_0.4.jpg) | ![0.55](assets/factor_0.55.jpg) | ![0.55](assets/factor_0.7.jpg) | ![0.55](assets/factor_0.85.jpg) |
+    | ![0.4](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/factor_0.4.jpg) | ![0.55](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/factor_0.55.jpg) | ![0.55](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/factor_0.7.jpg) | ![0.55](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/factor_0.85.jpg) |
 
 * `padding` - the type of padding (border mode) to apply after cropping the images. If faces are near edges, the empty areas after aligning those faces will be filled with some values. This could be _constant_ (leave black), _replicate_ (repeat the last value of the edge in the original image), _reflect_ (mirror the values before the edge).
 
-    | Constant                                 | Replicate                                  | Reflect                                | Wrap                             |
-    | :--------------------------------------: | :----------------------------------------: | :------------------------------------: | :------------------------------: |
-    | ![constant](assets/padding_constant.jpg) | ![replicate](assets/padding_replicate.jpg) | ![reflect](assets/padding_reflect.jpg) | ![wrap](assets/padding_wrap.jpg) |
+    | Constant                                                                                               | Replicate                                                                                                | Reflect                                                                                              | Wrap                                                                                           |
+    | :----------------------------------------------------------------------------------------------------: | :------------------------------------------------------------------------------------------------------: | :--------------------------------------------------------------------------------------------------: | :--------------------------------------------------------------------------------------------: |
+    | ![constant](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/padding_constant.jpg) | ![replicate](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/padding_replicate.jpg) | ![reflect](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/padding_reflect.jpg) | ![wrap](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/padding_wrap.jpg) |
 
 * `det_threshold` - if automatic detection is desired, then detection threshold, which is a value between 0 and 1, can be specified to indicate when the detected face should be considered an actual face. Lower values allow more faces to be extracted, however they can be blurry and not non-primary, e.g., the ones in the background. Higher values only alow clear faces to be considered. It only makes sense to play around with this parameter when `strategy` is specified to return more than one face, e.g., _all_. For example, if it is `0.999`, the blurry face in the background in the examples above is not detected, however if the threshold `0.998`, the face is still detected. For blurrier images, thresholds may differ.
 
@@ -109,8 +109,8 @@ Quality enhancement feature allows to restore blurry faces. It has one main argu
 
     | Face 1                 | Face 2                 | Face 3                 | Face 4                 |
     | :--------------------: | :--------------------: | :--------------------: | :--------------------: |
-    | ![b1](assets/f1_b.jpg) | ![b2](assets/f2_b.jpg) | ![b3](assets/f3_b.jpg) | ![b6](assets/f4_b.jpg) |
-    | ![a1](assets/f1_a.jpg) | ![a2](assets/f2_a.jpg) | ![a3](assets/f3_a.jpg) | ![a6](assets/f4_a.jpg) |
+    | ![b1](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/f1_b.jpg) | ![b2](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/f2_b.jpg) | ![b3](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/f3_b.jpg) | ![b6](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/f4_b.jpg) |
+    | ![a1](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/f1_a.jpg) | ![a2](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/f2_a.jpg) | ![a3](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/f3_a.jpg) | ![a6](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/f4_a.jpg) |
 
 
 > Quality enhancement can be used as a separate feature to enhance images that contain faces. For an end user, it is a useful feature to boost the quality of photos. It is not suggested to enhance ultra high resolution images (>2000) because your GPU will explode. See _Pure Enhancement/Parsing_ section on how to run it as a stand-alone.
@@ -123,15 +123,15 @@ Face parsing to attributes allows to group output images by category and generat
 
     | Glasses <br/> `[6]`           | Earrings and neckless <br/> `[9, 15]`       | Hats, no glasses <br/> `[18, -6]`     | No accessories <br/> `[-6, -9, -15, -18]` |
     | :---------------------------: | :-----------------------------------------: | :-----------------------------------: | :---------------------------------------: |
-    | ![ag11](assets/glasses_1.jpg) | ![ag21](assets/earrings_and_neckless_1.jpg) | ![ag31](assets/hats_no_glasses_1.jpg) | ![ag31](assets/no_accessories_1.jpg)      |
-    | ![ag12](assets/glasses_2.jpg) | ![ag21](assets/earrings_and_neckless_2.jpg) | ![ag31](assets/hats_no_glasses_2.jpg) | ![ag31](assets/no_accessories_2.jpg)      |
+    | ![ag11](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/glasses_1.jpg) | ![ag21](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/earrings_and_neckless_1.jpg) | ![ag31](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/hats_no_glasses_1.jpg) | ![ag31](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/no_accessories_1.jpg)      |
+    | ![ag12](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/glasses_2.jpg) | ![ag21](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/earrings_and_neckless_2.jpg) | ![ag31](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/hats_no_glasses_2.jpg) | ![ag31](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/no_accessories_2.jpg)      |
 
 * `mask_groups` - Dictionary specifying mask groups, based on which the face images and their masks should be grouped. Each key represents a mask group name, e.g., _nose_, _eyes and eyebrows_, and each value represents attribute indices, e.g., `[10]`, `[2, 3, 4, 5]`, each index mapping to some attribute. Since this model labels face image pixels, a mask will be created with 255 (white) at pixels that match the specified attributes and zeros (black) elsewhere. Note that negative values would make no sense here and having them would cause an error. Images are saved to sub-directories named by the mask group and masks are saved to sub-directories under the same name, except with `_mask` suffix. If it is None, then there will be no grouping according to mask groups. Here are some group examples with 1 sample image and its mask per group (for consistency, same images as before):
 
     | Glasses <br/> `[6]`           | Earrings and neckless <br/> `[9, 15]`       | Nose <br/> `[10]`                     | Eyes and eyebrows <br/> `[2, 3, 4, 5]` |
     | :---------------------------: | :-----------------------------------------: | :-----------------------------------: | :------------------------------------: |
-    | ![ag11](assets/glasses_1.jpg) | ![ag21](assets/earrings_and_neckless_1.jpg) | ![ag31](assets/hats_no_glasses_1.jpg) | ![ag31](assets/no_accessories_1.jpg)   |
-    | ![ag11](assets/glasses_m.jpg) | ![ag21](assets/earrings_and_neckless_m.jpg) | ![ag31](assets/hats_no_glasses_m.jpg) | ![ag31](assets/no_accessories_m.jpg)   |
+    | ![ag11](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/glasses_1.jpg) | ![ag21](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/earrings_and_neckless_1.jpg) | ![ag31](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/hats_no_glasses_1.jpg) | ![ag31](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/no_accessories_1.jpg)   |
+    | ![ag11](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/glasses_m.jpg ) | ![ag21](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/earrings_and_neckless_m.jpg) | ![ag31](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/hats_no_glasses_m.jpg) | ![ag31](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/no_accessories_m.jpg)   |
 
 > If both `attr_groups` and `mask_groups` are specified, first images are grouped according to face attributes, then images in each groups are further sub-grouped to different mask groups (along with their masks).
 
@@ -165,7 +165,7 @@ You can specify the command-line arguments via JSON config file and provide the 
 face-crop-plus --config path/to/json --attr-groups '{"glasses": [6]}'
 ```
 
-An example JSON config file is [demo.json](demo/demo.json). If you've cloned the repository, you can run from it:
+An example JSON config file is [demo.json](https://github.com/mantasu/face-crop-plus/blob/main/demo/demo.json). If you've cloned the repository, you can run from it:
 ```bash
 face-crop-plus --config demo/demo.json --device cuda:0 # overwrite device
 ```
@@ -287,6 +287,6 @@ If you find this package helpful in your research, you can cite the following:
   publisher = {GitHub},
   journal = {GitHub repository},
   howpublished = {\url{https://github.com/mantasu/face-crop-plus}},
-  doi = {10.5281/zenodo.7856750}
+  doi = {10.5281/zenodo.7856908}
 }
 ```
