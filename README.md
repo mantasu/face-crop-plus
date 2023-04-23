@@ -1,10 +1,16 @@
 # Face Crop Plus
 
-<center>
+[![DOI](https://zenodo.org/badge/621262834.svg)](https://zenodo.org/badge/latestdoi/621262834)
+[![PyPI](https://img.shields.io/pypi/v/face-crop-plus?color=orange)](https://pypi.org/project/face-crop-plus/)
+[![Python: 3.10](https://img.shields.io/badge/python-3.10-brightgreen)](https://www.python.org/downloads/release/python-3100/)
+[![CUDA: yes](https://img.shields.io/badge/cuda-yes-green)](https://developer.nvidia.com/cuda-toolkit)
+[![License: MIT](https://img.shields.io/badge/license-MIT-lightgrey.svg)](https://opensource.org/licenses/MIT)
+
+<p align="center" width="100%">
 
 ![Banner](assets/banner.png)
 
-</center>
+</p>
 
 ## About
 
@@ -132,7 +138,7 @@ Face parsing to attributes allows to group output images by category and generat
 
 Here are the 19 possible face attributes (with `0` representing the neutral category):
 
-<center>
+<p align="center" width="100%">
 
 |                     |                  |                  |
 | ------------------- | ---------------- | ---------------- |
@@ -143,7 +149,7 @@ Here are the 19 possible face attributes (with `0` representing the neutral cate
 | `5` - right eye     | `11` - mouth     | `17` - hair      |
 | `6` - eyeglasses    | `12` - upper lip | `18` - hat       |
 
-</center>
+</p>
 
 ## Examples
 
@@ -256,7 +262,7 @@ Here is an example pipeline of how to pre-process [CelebA](https://mmlab.ie.cuhk
 ## Tips
 
 1. When using `num_processes`, only set it to a larger value if you have enough GPU memory, or reduce `batch_size`. Unless you only perform face cropping with already known landmarks and don;t perform quality enhancement nor face parsing, in which case set it to the number of CPU cores you have.
-2. If you experience and of the following:
+2. If you experience any of the following:
     * RuntimeError: CUDA error: an illegal memory access was encountered.
     * torch.cuda.OutOfMemoryError: CUDA out of memory.
     * cuDNN error: CUDNN_STATUS_MAPPING_ERROR.

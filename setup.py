@@ -1,20 +1,28 @@
+import subprocess
 import setuptools
+
+version = (
+    subprocess.run(["git", "describe", "--tags"], stdout=subprocess.PIPE)
+    .stdout.decode("utf-8")
+    .strip()
+)
 
 with open("README.md", "r", encoding = "utf-8") as f:
     long_description = f.read()
 
 setuptools.setup(
     name = "face-crop-plus",
-    version = "1.0.0",
+    version = version,
     author = "mantasu (Mantas Birškus)",
-    author_email = "<mantix7@gmail.com>",
+    author_email = "mantix7@gmail.com",
     license = "MIT",
     description = f"Automatic face aligner and cropper with quality "
                   f"enhancement and attribute parsing.",
     long_description = long_description,
     long_description_content_type = "text/markdown",
-    url = "TODO: Package URL",
+    url = "https://github.com/mantasu/face-crop-plus",
     project_urls = {
+        "Documentation": "https://mantasu.github.io/face-crop-plus",
         "Bug Tracker": "https://github.com/mantasu/face-crop-plus/issues",
     },
     keywords = [
@@ -38,13 +46,14 @@ setuptools.setup(
         "torch",
         "torchvision",
     ],
-    # dependency_links = [
-    #     "https://download.pytorch.org/whl/cu118",
-    # ],
     classifiers = [
+        "Intended Audience :: Science/Research",
+        "Intended Audience :: Developers",
         "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3.10",
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
+        "Topic :: Software Development :: Libraries :: Python Modules",
     ],
     package_dir = {"": "src"},
     packages = setuptools.find_packages(where="src"),

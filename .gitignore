@@ -7,6 +7,7 @@ img_celeba_faces
 demo/input_images_faces
 
 # Build
+dist
 build
 _build
 _static
