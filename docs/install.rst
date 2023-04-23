@@ -15,7 +15,7 @@ Or, to install it from source, run:
 .. code-block:: bash
 
     git clone https://github.com/mantasu/face-crop-plus
-    cd face-crop-plus & pip install .
+    cd face-crop-plus && pip install .
 
 .. note::
 
