@@ -2,6 +2,7 @@ import os
 import cv2
 import json
 import torch
+import warnings
 import numpy as np
 
 
@@ -220,21 +221,64 @@ def as_tensor(
     
     return img
 
-def create_batch_from_files(
+def read_images(
     file_names: list[str],
     input_dir: str,
+) -> tuple[list[np.ndarray], np.ndarray]:
+    """Reads images from the specified paths.
+
+    Takes a list of file names and an input directory and loads the 
+    specified images from it. If an image could not be loaded, a warning 
+    is raised.
+
+    Args:
+        file_names: The list of image file names.
+        input_dir (str): The input directory with the images.
+
+    Returns:
+        A tuple where the first element is a list of length N (number of 
+        loaded images) where each element is an RGB image represented as 
+        a numpy array of type :attr:`numpy.uint8` of shape (H, W, 3) 
+        (note that H and W for each image can be different) and the 
+        second element is a numpy array of type :class:`numpy.str_` of 
+        shape (N,) representing the list of file names that correspond 
+        to each image. The second element is just a numpy form of 
+        ``file_names`` but it can have a lower length, in case some 
+        images were not read successfully.
+    """
+    # Init index and img list
+    indices, images = [], []
+
+    for i, file_name in enumerate(file_names):
+        # Generate full path to the input image
+        path = os.path.join(input_dir, file_name)
+
+        try:
+            # Read the image from the given path, convert to RGB form
+            image = cv2.cvtColor(cv2.imread(path), cv2.COLOR_BGR2RGB)
+        except cv2.error as e:
+            warnings.warn(f"Could not read the image {path}")
+            continue
+        
+        # Add image and index
+        images.append(image)
+        indices.append(i)
+    
+    return images, np.array(file_names)[indices]
+
+def as_batch(
+    images: list[np.ndarray],
     size: int | tuple[int, int] = 512,
     padding_mode: str = "constant",
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Creates image batch from a list of image paths.
 
-    For every image path in the given list, the image is read, resized
-    to not exceed either of the dimensions specified in ``size`` while
-    keeping the same aspect ratio and the shorter dimension is padded to
-    fully match the specified size. All the images are stacked and
-    returned as a batch. Variables required to transform the images back
-    to the original ones (padding and scale) are also returned as a
-    batch.
+    For every image in the given list, the image is resized to not 
+    exceed either of the dimensions specified in ``size`` while keeping 
+    the same aspect ratio and the shorter dimension is padded to fully 
+    match the specified size. All the images are stacked and returned as 
+    a batch. Variables required to transform the images back to the 
+    original ones (padding and scale) are also returned as a batch.
 
     Example:
         If some loaded image dimension is (1280×720) and the desired
@@ -243,7 +287,7 @@ def create_batch_from_files(
         from both sides. The final image size is *(512, 256)*.
 
     Args:
-        file_names: The list of paths to images.
+        images: The list of paths to images.
         padding_mode: The type of padding to apply to pad the shorter
             dimension. For the available options, see
             `OpenCV BorderTypes <https://docs.opencv.org/3.4/d2/de8/group__core__array.html#ga209f2f4869e304c82d07739337eae7c5>`_.
@@ -262,15 +306,11 @@ def create_batch_from_files(
         values >= 0.
     """
     # Init lists, resize dims, border type
-    images, unscales, paddings = [], [], []
+    img_batch, unscales, paddings = [], [], []
     size = (size, size) if isinstance(size, int) else size
     border_type = getattr(cv2, f"BORDER_{padding_mode.upper()}")
-    file_paths = [os.path.join(input_dir, file) for file in file_names]
 
-    for path in file_paths:
-        # Read the image from the given path, convert to RGB form
-        image = cv2.cvtColor(cv2.imread(path), cv2.COLOR_BGR2RGB)
-    
+    for image in images:    
         # Get width, height, padding & check interpolation
         (h, w), m = image.shape[:2], max(*image.shape[:2])
         interpolation = cv2.INTER_AREA if m > max(size) else cv2.INTER_CUBIC
@@ -291,8 +331,8 @@ def create_batch_from_files(
         image = cv2.copyMakeBorder(image, *padding, borderType=border_type)
 
         # Append to lists
-        images.append(image)
+        img_batch.append(image)
         unscales.append(np.array(unscale))
         paddings.append(np.array(padding))
 
-    return np.stack(images), np.stack(unscales), np.stack(paddings)
+    return np.stack(img_batch), np.stack(unscales), np.stack(paddings)

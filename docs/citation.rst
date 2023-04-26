@@ -13,5 +13,5 @@ To cite this work, please use:
         publisher = {GitHub},
         journal = {GitHub repository},
         howpublished = {\url{https://github.com/mantasu/face-crop-plus}},
-        doi = {10.5281/zenodo.7856908}
+        doi = {10.5281/zenodo.7856749}
     }

@@ -16,9 +16,10 @@ from .utils import (
     STANDARD_LANDMARKS_5, 
     parse_landmarks_file, 
     get_ldm_slices, 
-    create_batch_from_files, 
     as_numpy, 
     as_tensor,
+    read_images,
+    as_batch,
 )
 
 
@@ -740,7 +741,7 @@ class Cropper():
                     group_dir += "_mask"
                     masks = masks[[mask_indices.index(i) for i in group_idx]]
                     self.save_group(masks, file_name_group, group_dir)
-
+    
     def process_batch(self, file_names: list[str], input_dir: str, output_dir: str):
         """Extracts faces from a batch of images and saves them.
 
@@ -783,40 +784,31 @@ class Cropper():
             output_dir: Path to output directory to save the extracted 
                 face images.
         """
+        # Read images and filter valid corresponding file names
+        images, file_names = read_images(file_names, input_dir)
+
         if self.landmarks is None and self.det_model is None:
-            # Initialize empty lists, landmarks and paddings as None
-            images, indices, landmarks, paddings = [], [], None, None
-
-            for i, file_name in enumerate(file_names):
-                # Make path, load image, convert to RGB
-                path = os.path.join(input_dir, file_name)
-                image = cv2.cvtColor(cv2.imread(path), cv2.COLOR_BGR2RGB)
-
-                # Update the lists
-                indices.append(i)
-                images.append(image)
+            # One-to-one image to index mapping and no landmarks
+            indices, landmarks = list(range(len(file_names))), None
         elif self.landmarks is not None:
-            # Initialize empty image and index lists, set padding None
-            images, img_indices, ldm_indices, paddings = [], [], [], None
+            # Initialize empty idx lists
+            indices, indices_ldm = [], []
 
             for i, file_name in enumerate(file_names):
-                # Make path, load image, check indices
-                path = os.path.join(input_dir, file_name)
-                image = cv2.cvtColor(cv2.imread(path), cv2.COLOR_BGR2RGB)
+                # Check the indices of landmark sets in landmarks file
                 indices_i = np.where(file_name == self.landmarks[1])[0]
 
-                # Update the lists
-                images.append(image)
-                img_indices.extend([i] * len(indices_i))
-                ldm_indices.extend(indices_i.tolist())
+                # Update img & ldm file name indices
+                indices.extend([i] * len(indices_i))
+                indices_ldm.extend(indices_i.tolist())
             
-            # Update indices and select landmarks
-            indices = img_indices
-            landmarks = self.landmarks[0][ldm_indices]
+            # Set landmarks according to the indices
+            landmarks = self.landmarks[0][indices_ldm]
+            
         elif self.det_model is not None:
-            # Create a batch of images (with faces) and their paddings
-            b = create_batch_from_files(file_names, input_dir, self.resize_size)
-            images, paddings = as_tensor(b[0], self.device), b[2]
+             # Create a batch of images (with faces) and their paddings
+            images, _, paddings = as_batch(images, self.resize_size)
+            images, paddings = as_tensor(images, self.device), paddings
 
             # If landmarks were not given, predict, undo padding
             landmarks, indices = self.det_model.predict(images)
@@ -847,9 +839,8 @@ class Cropper():
             # Predict attribute and mask groups if face parsing desired
             groups = self.par_model.predict(as_tensor(images, self.device))
 
-        # Pick file names for each face, save faces
-        file_names = np.array(file_names)[indices]
-        self.save_groups(images, file_names, output_dir, *groups)
+        # Pick file names for each face, save faces (by groups if exist)
+        self.save_groups(images, file_names[indices], output_dir, *groups)
     
     def process_dir(self, input_dir: str, output_dir: str | None = None):
         """Processes images in the specified input directory.

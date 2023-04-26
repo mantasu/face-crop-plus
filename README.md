@@ -16,7 +16,7 @@
 
 Image preprocessing package for automatic face alignment and cropping with additional features. It provides the following functionality:
 1. **Face cropping** - face alignment and center-cropping using facial landmarks. Landmarks can be automatically predicted or, if they are already know, can be supplied through a separate file. It is possible to specify face factor, i.e., face area relative to the cropped image, and face extraction strategy, e.g., all faces or largest face per image.
-2. **Face enhancement** - face image quality enhancement. If images are blurry or contain many small faces, quality enhancement model can be used to make the images clearer. Small faces in the image are automatically checked and and enhanced if desired.
+2. **Face enhancement** - face image quality enhancement. If images are blurry or contain many small faces, quality enhancement model can be used to make the images clearer. Small faces in the image are automatically checked and enhanced if desired.
 3. **Face parsing** - face attribute parsing and cropped image grouping to sub-directories. Face images can be grouped according to some facial attributes or some combination, such as _glasses_, _earrings and neckless_, _hats_. It is also possible to generate masks for facial attributes or some combination of them, for instance, _glasses_, _nose_, _nose and eyes_.
 
 Please see _References_ section for more details about which models are used for each feature.
@@ -261,13 +261,13 @@ Here is an example pipeline of how to pre-process [CelebA](https://mmlab.ie.cuhk
 
 ## Tips
 
-1. When using `num_processes`, only set it to a larger value if you have enough GPU memory, or reduce `batch_size`. Unless you only perform face cropping with already known landmarks and don;t perform quality enhancement nor face parsing, in which case set it to the number of CPU cores you have.
+1. When using `num_processes`, only set it to a larger value if you have enough GPU memory, or reduce `batch_size`. Unless you only perform face cropping with already known landmarks and don't perform quality enhancement nor face parsing, in which case set it to the number of CPU cores you have.
 2. If you experience any of the following:
     * RuntimeError: CUDA error: an illegal memory access was encountered.
     * torch.cuda.OutOfMemoryError: CUDA out of memory.
     * cuDNN error: CUDNN_STATUS_MAPPING_ERROR.
 
-   This is likely because you are processing images on too many processes or have a large batch size. It you run all 3 models on GPU, it may be helpful to just run on a single process with a larger batch size.
+   This is likely because you are processing images on too many processes or have a large batch size. If you run all 3 models on GPU, it may be helpful to just run on a single process with a larger batch size.
 
 ## References
 
@@ -287,6 +287,6 @@ If you find this package helpful in your research, you can cite the following:
   publisher = {GitHub},
   journal = {GitHub repository},
   howpublished = {\url{https://github.com/mantasu/face-crop-plus}},
-  doi = {10.5281/zenodo.7856908}
+  doi = {10.5281/zenodo.7856749}
 }
 ```
