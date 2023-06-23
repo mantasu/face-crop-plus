@@ -111,7 +111,6 @@ def parse_args() -> dict[str, Any]:
     # Arg parser that can load default values
     parser = ArgumentParserWithConfig()
 
-    # TODO: check list args, check transparent, check attr_groups
     parser.add_argument(
         "-i", "--input_dir", type=str, 
         help="Path to input directory with image files.")
@@ -146,10 +145,10 @@ def parse_args() -> dict[str, Any]:
         help=f"The strategy to use to extract faces from each image. Defaults "
              f"to 'largest'.")
     parser.add_argument(
-        "-p", "--padding", type=str, default="reflect",
+        "-p", "--padding", type=str, default="constant",
         choices=["constant", "replicate", "reflect", "wrap", "reflect_101"], 
         help=f"The padding type (border mode) to apply when cropping out faces"
-             f" near edges. Defaults to 'reflect'.")
+             f" near edges. Defaults to 'constant'.")
     parser.add_argument(
         "-a", "--allow-skew", action="store_true", 
         help=f"Whether to allow skewing the faces to better match the the "
@@ -179,10 +178,14 @@ def parse_args() -> dict[str, Any]:
              f"value is provided, e.g., -1, landmark prediction is not "
              f"performed. Defaults to 0.6.")
     parser.add_argument(
-        "-et", "--enh-threshold", type=float, default=0.001, 
+        "-et", "--enh-threshold", type=float, default=-1, 
         help=f"Quality enhancement threshold that tells when the image quality "
              f"should be enhanced. It is the minimum average face factor in "
-             f"the input image. Defaults to 0.001.")
+             f"the input image, below which the image is enhanced. It is "
+             f"advised to set this to a low number, like 0.001 - very high "
+             f"fractions might unnecessarily cause the image quality to be "
+             f"improved. If a negative value is provided, no enhancement is "
+             f"performed. Defaults to -1.")
     parser.add_argument(
         "-b", "--batch-size", type=int, default=8, 
         help=f"The batch size. It is the maximum number of images that can be "

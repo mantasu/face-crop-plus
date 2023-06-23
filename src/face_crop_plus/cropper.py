@@ -143,13 +143,13 @@ class Cropper():
         resize_size: int | tuple[int, int] | list[int] = 1024,
         face_factor: float = 0.65,
         strategy: str = "largest",
-        padding: str = "reflect",
+        padding: str = "constant",
         allow_skew: bool = False,
         landmarks: str | tuple[np.ndarray, np.ndarray] | None = None,
         attr_groups: dict[str, list[int]] | None = None,
         mask_groups: dict[str, list[int]] | None = None,
         det_threshold: float | None = 0.6,
-        enh_threshold: float | None = 0.001,
+        enh_threshold: float | None = None,
         batch_size: int = 8,
         num_processes: int = 1,
         device: str | torch.device = "cpu",
@@ -278,7 +278,10 @@ class Cropper():
                 the image quality should be enhanced (it is an expensive 
                 operation). It is the minimum average face factor, i.e., 
                 face area relative to the image, below which the whole 
-                image is enhanced. Defaults to 0.001.
+                image is enhanced. It is advised to set this to a low 
+                number, like 0.001 - very high fractions might 
+                unnecessarily cause the image quality to be improved.
+                Defaults to None.
             batch_size: The batch size. It is the maximum number of 
                 images that can be processed by every processor at a 
                 single time-step. Large values may result in memory 
@@ -417,7 +420,7 @@ class Cropper():
         match self.num_std_landmarks:
             case 5:
                 # If the number of std landmarks is 5
-                std_landmarks = STANDARD_LANDMARKS_5
+                std_landmarks = STANDARD_LANDMARKS_5.copy()
             case _:
                 # Otherwise the number of STD landmarks is not supported
                 raise ValueError(f"Unsupported number of standard landmarks "
@@ -791,12 +794,16 @@ class Cropper():
             # One-to-one image to index mapping and no landmarks
             indices, landmarks = list(range(len(file_names))), None
         elif self.landmarks is not None:
-            # Initialize empty idx lists
-            indices, indices_ldm = [], []
+            # Initialize empty idx lists and None paddings
+            indices, indices_ldm, paddings = [], [], None
 
             for i, file_name in enumerate(file_names):
                 # Check the indices of landmark sets in landmarks file
                 indices_i = np.where(file_name == self.landmarks[1])[0]
+
+                if len(indices_i) == 0:
+                    # Has no landmarks
+                    continue
 
                 # Update img & ldm file name indices
                 indices.extend([i] * len(indices_i))

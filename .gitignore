@@ -6,6 +6,9 @@ img_celeba_faces
 # Demo
 demo/input_images_faces
 
+# IDE
+.vscode
+
 # Build
 dist
 build

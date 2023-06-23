@@ -61,7 +61,7 @@ These flags allow you to change the behavior of :doc:`face_crop_plus.cropper`. C
 
     Options: constant, replicate, reflect, wrap, reflect_101
 
-    Default: reflect
+    Default: constant
 
 .. option::  -a, --allow-skew 
     
@@ -93,9 +93,9 @@ These flags allow you to change the behavior of :doc:`face_crop_plus.cropper`. C
 
 .. option::  -et <threshold>, --enh-threshold <threshold>
 
-    Quality enhancement threshold that tells when the image quality should be enhanced. It is the minimum average face factor in the input image.
+    Quality enhancement threshold that tells when the image quality should be enhanced. It is the minimum average face factor in the input image, below which the whole image is enhanced. It is advised to set this to a low number, like 0.001 - very high fractions might unnecessarily cause the image quality to be improved. If a negative value is provided, no enhancement is performed.
 
-    Default: 0.001
+    Default: -1
 
 .. option::  -b <batch_size>, --batch-size <batch_size>
 
