@@ -64,6 +64,27 @@ For a quick demo, you can experiment with `demo.py <https://github.com/mantasu/f
 
 .. _pure-enhancement-parsing:
 
+Cleaning File Names
+-------------------
+
+If your image file names contain non-ascii symbols, lengthy names, os-reserved characters, it may be better to standardize them. To do so, it is possible to rename the image files before processing them:
+
+.. code-block:: bash
+
+    face-crop-plus -i path/to/images --clean-names # --clean-names-inplace (avoids temp dir)
+
+It is possible to specify more arguments via python script. The function can be used in general with any file types. For more details, check :func:`~face_crop_plus.utils.clean_names`.
+
+.. code-block:: python
+
+    from face_crop_plus.utils import clean_names
+
+    clean_names(
+        input_dir="path/to/input/dir",
+        output_dir=None, # will rename in-place
+        max_chars=250,
+    )
+
 Pure Enhancement/Parsing
 ------------------------
 

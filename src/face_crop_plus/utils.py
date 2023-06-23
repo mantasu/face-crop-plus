@@ -1,10 +1,14 @@
 import os
+import re
 import cv2
 import json
+import tqdm
 import torch
+import shutil
 import warnings
+import unidecode
+import collections
 import numpy as np
-
 
 STANDARD_LANDMARKS_5 = np.float32([
     [0.31556875000000000, 0.4615741071428571],
@@ -336,3 +340,114 @@ def as_batch(
         paddings.append(np.array(padding))
 
     return np.stack(img_batch), np.stack(unscales), np.stack(paddings)
+
+def clean_names(
+    input_dir: str,
+    output_dir: str | None = None,
+    max_chars: int = 250,
+    exclude: set = set("\00!@#$%^&*?={}:;'<>,.?/\\|" + '"'),
+    desc: str | None = "Cleaning file names",
+):
+    """Cleans the names of the files in the given directory.
+
+    Converts all names of the files to os-compatible. In other words, 
+    each file is copied to a new directory with a clean name or is 
+    renamed in-place. 
+
+    Here is a list of fixes applied to the **names** of the files:
+
+        * Converts non-ascii symbols to ascii, e.g., "北亰" to 
+          "Bei Jing", "České" to "Ceske" etc.
+        * Removes os-reserved characters, e.g., in Windows, that would 
+          be '?', ':', '/' etc.
+        * Truncates the file name such that the overall path length 
+          would not exceed ``max_chars``. For instance, in Windows, 
+          there is a limit of _256_ characters per path.
+        * Appends suffixes to file names, such that, after the above 
+          mentioned changes, no file has the same name (counters are 
+          appended to duplicate names). This also deals with cases 
+          issue - for instance, in windows, same file names, even with 
+          different cases, cannot exist.
+
+    Args:
+        input_dir: The input directory of files to process. Note that 
+            the directory should only contain files.
+        output_dir: The output directory to save the copies of the 
+            renamed files to. If not specified, the files are renamed 
+            in-place, i.e., inside ``input_dir``. Defaults to None.
+        max_chars: The maximum number of characters per *file path* 
+            (not file name). File paths longer than that will be 
+            truncated to ``max_chars``. However, note that if duplicates 
+            are detected, then suffixes will be added and file paths for 
+            them could be longer by 2 or more characters. This should 
+            not be an issue if there are only a few duplicates and if 
+            ``max_chars`` is not directly set to the limit, e.g., in 
+            Windows the ultimate path length limit is 256. Defaults to 
+            250.
+        exclude: The set of characters to exclude from the file name, 
+            but not the extension. Note that this includes a dot '.' to 
+            only keep a single dot for the file extension. Defaults to 
+            {"\\00!@#$%^&*?={}:;'<>,.?/\\\\|" + '"'}.
+        desc: The description to use for the progress bar. If specified 
+            as ``None``, no progress bar is shown. Defaults to 
+            "Cleaning file names".
+
+    Raises:
+        RuntimeError: If the length of the path to the directory is too 
+            long and near ``max_chars`` limit.
+    """
+    # Update max_chars for names
+    max_chars -= len(input_dir)
+    filename_counts = collections.defaultdict(lambda: -1)
+
+    if max_chars <= 5:
+        raise RuntimeError(
+            f"Directory path length is too long ({len(input_dir)}) Either "
+            f"reduce the length of the directory name or increase `max_chars`."
+        )
+
+    if output_dir is not None:
+        # Create output dir of renamed files
+        os.makedirs(output_dir, exist_ok=True)
+    
+    # Get the list of filenames in dir
+    filenames = os.listdir(input_dir)
+
+    if desc is not None:
+        # Wrap a progress bar around filenames
+        filenames = tqdm.tqdm(filenames, desc=desc)
+    
+    for filename in filenames:
+        # Split to base-name and extension
+        name, ext = os.path.splitext(filename)        
+        
+        if not name.isascii():
+            # Convert to to proper unicode
+            name = unidecode.unidecode(name)
+        
+        if len(sub := set(name) & exclude) > 0:
+            # Remove non-supported characters 
+            name = re.sub(f"[{''.join(sub)}]", '', name)
+        
+        if len(filename) > max_chars:
+            # Truncate base-name to max chars
+            name = name[:max_chars - len(ext)]
+        
+        # Increment count for the current filename
+        filename_counts[(name + ext).lower()] += 1
+
+        while (count := filename_counts[(name + ext).lower()]) > 0:
+            # Add name suffix
+            name += f"-{count}"
+            filename_counts[(name + ext).lower()] += 1
+        
+        if output_dir is not None:
+            # Copy file with fixed name to out dir
+            src = os.path.join(input_dir, filename)
+            tgt = os.path.join(output_dir, name + ext)
+            shutil.copy(src, tgt)
+        elif name + ext != filename:
+            # Rename the file with a fixed name
+            src = os.path.join(input_dir, filename)
+            tgt = os.path.join(input_dir, name + ext)
+            os.rename(src, tgt)

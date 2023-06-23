@@ -22,6 +22,14 @@ These flags allow you to change the behavior of :doc:`face_crop_plus.cropper`. C
 
     Default: None
 
+.. option:: -cn, --clean-names
+    
+    Whether to rename the files to os-compatible before processing. For instance, this will rename '北亰.jpg' to 'Bei Jing.jpg', '<>a?bc.jpg.jpg' to 'abcjpg.jpg' etc. Useful because some path errors could occur while reading those images when processing. Note that this will create a temporary directory with renamed images; to rename the images in-place, use ``-ci``.
+
+.. option:: -ci, --clean-names-inplace,
+    
+    Same functionality as ``--clean-names``, except that all the files are renamed in ``input_dir``. This is not advised, however, if the directory contains many images, copying them to a temporary directory may be inefficient, thus this option can just rename the files in-place. Note that specifying this, will override ``-cn`` option, regardless if it's specified of not.
+
 .. option:: -s <width> <height>, --output-size <width> <height>
 
     The output size (width, height) of cropped image faces. If provided as a single number, the same value is used for both width and height.
@@ -53,7 +61,6 @@ These flags allow you to change the behavior of :doc:`face_crop_plus.cropper`. C
     Choices: all, best, largest
 
     Default: largest
-
 
 .. option:: -p <type>, --padding <type>
     
@@ -111,6 +118,6 @@ These flags allow you to change the behavior of :doc:`face_crop_plus.cropper`. C
 
 .. option::  -d <device>, --device <device>
 
-    The device on which to perform the predictions, i.e., landmark detection, quality enhancement and face parsing.
+    The device on which to perform the predictions, i.e., landmark detection, quality enhancement and face parsing. If specified as 'auto', it will be checked if CUDA is available and thus used, otherwise CPU will be assigned. Defaults to 'auto'.
     
-    Default: cpu
+    Default: auto

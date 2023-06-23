@@ -1,8 +1,11 @@
 import sys
 import json
+import torch
+import shutil
 import argparse
 from typing import Any
 from .cropper import Cropper
+from .utils import clean_names
 
 class ArgumentParserWithConfig(argparse.ArgumentParser):
     """An ArgumentParser that loads default values from a config file.
@@ -120,6 +123,24 @@ def parse_args() -> dict[str, Any]:
              f"not specified, the same path is used as for input_dir, except "
              f"'_faces' suffix is added the name.")
     parser.add_argument(
+        "-cn", "--clean-names", action="store_true", 
+        help=f"Whether to rename the files to os-compatible before processing. "
+             f"For instance, this will rename '北亰.jpg' to 'Bei Jing.jpg', "
+             f"'<>a?bc.jpg.jpg' to 'abcjpg.jpg' etc. Useful because some path "
+             f"errors could occur while reading those images when processing. "
+             f"Note that this will create a temporary directory with renamed "
+             f"images; to rename the images in-place, use `-ci`."
+    )
+    parser.add_argument(
+        "-ci", "--clean-names-inplace", action="store_true",
+        help=f"Same functionality as `--clean-names`, except that all the "
+             f"files are renamed in `input_dir`. This is not advised, however, "
+             f"if the directory contains many images, copying them to a "
+             f"temporary directory may be inefficient, thus this option can "
+             f"just rename the files in-place. Note that specifying this, "
+             f"will override `-cn` option, regardless if it's specified of not."
+    )
+    parser.add_argument(
         "-s", "--output-size", type=int, nargs='+', default=[256, 256], 
         help=f"The output size (width, height) of cropped image faces. If "
              f"provided as a single number, the same value is used for both "
@@ -198,16 +219,20 @@ def parse_args() -> dict[str, Any]:
              f"attribute grouping is done, feel free to set this to the "
              f"number of CPUs your machine has. Defaults to 1.")
     parser.add_argument(
-        "-d", "--device", type=str, default="cpu", 
+        "-d", "--device", type=str, default="auto", 
         help=f"The device on which to perform the predictions, i.e., landmark "
-             f"detection, quality enhancement and face  parsing. Defaults to "
-             f"'cpu'.")
+             f"detection, quality enhancement and face parsing. If specified "
+             f"as 'auto', it will be checked if CUDA is available and thus "
+             f"used, otherwise CPU will be assigned. Defaults to 'auto'.")
 
     # Parse arguments and convert to dict
     kwargs = vars(parser.parse_args())
     
     if kwargs["input_dir"] is None:
         raise ValueError("Input directory must be specified.")
+    
+    if kwargs["device"] == "auto":
+        kwargs["device"] = "cuda" if torch.cuda.is_available() else "cpu"
     
     if kwargs["det_threshold"] is not None and kwargs["det_threshold"] < 0:
         # If negative, set it to None
@@ -232,13 +257,29 @@ def main():
     # Parse arguments
     kwargs = parse_args()
 
-    # Pop the input and output dirs
+    # Pop some dir and naming arguments
     input_dir = kwargs.pop("input_dir")
     output_dir = kwargs.pop("output_dir")
+    needs_clean = kwargs.pop("clean_names")
+    is_inplace = kwargs.pop("clean_names_inplace")
+
+    if needs_clean or is_inplace:
+        # Clean file names (either in-place or copy to temp dir)
+        cn_output_dir = None if is_inplace else input_dir + "_temp"
+        clean_names(input_dir=input_dir, output_dir=cn_output_dir)
+    
+    if needs_clean and not is_inplace:
+        # Update the provided input and output directories
+        output_dir = input_dir + "_faces" if output_dir is None else output_dir
+        input_dir += "_temp"
 
     # Init cropper and process
     cropper = Cropper(**kwargs)
     cropper.process_dir(input_dir, output_dir)
+
+    if needs_clean and not is_inplace:
+        # Remove temporary dir
+        shutil.rmtree(input_dir)
 
 if __name__ == "__main__":
     main()

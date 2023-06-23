@@ -178,6 +178,25 @@ face-crop-plus -h
 
 > **Note**: you can use `fcp` as `face-crop-plus` alias , e.g., `fcp -c config.json`
 
+### Cleaning File Names
+
+If your image files contain non-ascii symbols, lengthy names, os-reserved characters, it may be better to standardize them. To do so, it is possible to rename the image files before processing them:
+```bash
+face-crop-plus -i path/to/images --clean-names # --clean-names-inplace (avoids temp dir)
+```
+
+It is possible to specify more arguments via python script. The function can be used in general with any file types:
+
+```python
+from face_crop_plus.utils import clean_names
+
+clean_names(
+    input_dir="path/to/input/dir",
+    output_dir=None, # will rename in-place
+    max_chars=250,
+)
+```
+
 ### Pure Enhancement/Parsing
 
 If you already have aligned and center-cropped face images, you can perform quality enhancement and face parsing without re-cropping them. Here is an example of enhancing quality of every face and parsing them to (note that none of the parameters described in _Alignment and Cropping_ section have any affect here):

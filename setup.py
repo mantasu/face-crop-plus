@@ -5,7 +5,7 @@ with open("README.md", "r", encoding = "utf-8") as f:
 
 setuptools.setup(
     name = "face-crop-plus",
-    version = "1.0.3",
+    version = "1.1.0",
     author = "Mantas Birškus",
     author_email = "mantix7@gmail.com",
     license = "MIT",
@@ -35,6 +35,7 @@ setuptools.setup(
     ],
     install_requires = [
         "tqdm",
+        "unidecode",
         "opencv-python",
         "torch",
         "torchvision",

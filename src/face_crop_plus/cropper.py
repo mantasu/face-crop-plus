@@ -849,7 +849,12 @@ class Cropper():
         # Pick file names for each face, save faces (by groups if exist)
         self.save_groups(images, file_names[indices], output_dir, *groups)
     
-    def process_dir(self, input_dir: str, output_dir: str | None = None):
+    def process_dir(
+        self, 
+        input_dir: str, 
+        output_dir: str | None = None,
+        desc: str | None = "Processing",
+    ):
         """Processes images in the specified input directory.
 
         Splits all the file names in the input directory to batches 
@@ -872,6 +877,9 @@ class Cropper():
                 (and optionally grouped to sub-directories) face images. 
                 If None, then the same path as for ``input_dir`` is used 
                 and additionally "_faces" suffix is added to the name.
+            desc: The description to use for the progress bar. If 
+                specified as ``None``, no progress bar is shown. 
+                Defaults to "Processing".
         """
         if output_dir is None:
             # Create a default output dir name
@@ -892,4 +900,10 @@ class Cropper():
         with ThreadPool(self.num_processes, self._init_models) as pool:
             # Create imap object and apply workers to it
             imap = pool.imap_unordered(worker, file_batches)
-            list(tqdm.tqdm(imap, total=len(file_batches), desc="Processing"))
+            
+            if desc is not None:
+                # If description is provided, wrap progress bar around
+                imap = tqdm.tqdm(imap, total=len(file_batches), desc=desc)
+            
+            # Process
+            list(imap)
