@@ -180,7 +180,7 @@ def parse_args() -> dict[str, Any]:
              f"performed. Defaults to 0.6.")
     parser.add_argument(
         "-et", "--enh-threshold", type=float, default=0.001, 
-        help=f"Quality enhancement threshold that tells when the image quality"
+        help=f"Quality enhancement threshold that tells when the image quality "
              f"should be enhanced. It is the minimum average face factor in "
              f"the input image. Defaults to 0.001.")
     parser.add_argument(

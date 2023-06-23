@@ -33,7 +33,7 @@ class BiSeNet(nn.Module, LoadMixin):
         * 12 - upper lip
         * 13 - lower lip
         * 14 - neck
-        * 15 - neckless
+        * 15 - necklace
         * 16 - clothes
         * 17 - hair
         * 18 - hat
@@ -42,9 +42,9 @@ class BiSeNet(nn.Module, LoadMixin):
 
         * ``'glasses': [6]`` - this will put each face image that 
           contains pixels labeled as 6 to a category called 'glasses'.
-        * ``'earings_and_neckless': [9, 15]`` - this will put each image 
+        * ``'earings_and_necklace': [9, 15]`` - this will put each image 
           that contains pixels labeled as 9 and also contains pixels
-          labeled as 15 to a category called 'earings_and_neckless'.
+          labeled as 15 to a category called 'earings_and_necklace'.
         * ``'no_accessories': [-6, -9, -15, -18]`` - this will put each 
           face image that does not contain pixels labeled as either 6, 
           9, 15, or 18 to a category called 'no_accessories'.
@@ -141,7 +141,7 @@ class BiSeNet(nn.Module, LoadMixin):
             attr_groups: Dictionary specifying attribute groups, based 
                 on which the face images should be grouped. Each key 
                 represents an attribute group name, e.g., 'glasses', 
-                'earings_and_neckless', 'no_accessories', and each value 
+                'earings_and_necklace', 'no_accessories', and each value 
                 represents attribute indices, e.g., `[6]`, `[9, 15]`, 
                 `[-6, -9, -15, -18]`, each index mapping to some 
                 attribute. Since this model labels face image pixels, if 

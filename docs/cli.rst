@@ -93,7 +93,7 @@ These flags allow you to change the behavior of :doc:`face_crop_plus.cropper`. C
 
 .. option::  -et <threshold>, --enh-threshold <threshold>
 
-    Quality enhancement threshold that tells when the image qualityshould be enhanced. It is the minimum average face factor in the input image.
+    Quality enhancement threshold that tells when the image quality should be enhanced. It is the minimum average face factor in the input image.
 
     Default: 0.001
 

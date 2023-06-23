@@ -1,9 +1,10 @@
 # Face Crop Plus
 
-[![DOI](https://zenodo.org/badge/621262834.svg)](https://zenodo.org/badge/latestdoi/621262834)
 [![PyPI](https://img.shields.io/pypi/v/face-crop-plus?color=orange)](https://pypi.org/project/face-crop-plus/)
-[![Python: 3.10](https://img.shields.io/badge/python-3.10-brightgreen)](https://www.python.org/downloads/release/python-3100/)
+[![Python](https://img.shields.io/badge/python-3.10%20|%203.11-yellow)](https://docs.python.org/3/)
 [![CUDA: yes](https://img.shields.io/badge/cuda-yes-green)](https://developer.nvidia.com/cuda-toolkit)
+[![Docs: passing](https://img.shields.io/badge/docs-passing-skyblue)](https://mantasu.github.io/face-crop-plus/)
+[![DOI](https://zenodo.org/badge/621262834.svg)](https://zenodo.org/badge/latestdoi/621262834)
 [![License: MIT](https://img.shields.io/badge/license-MIT-lightgrey.svg)](https://opensource.org/licenses/MIT)
 
 <p align="center" width="100%">
@@ -17,7 +18,7 @@
 Image preprocessing package for automatic face alignment and cropping with additional features. It provides the following functionality:
 1. **Face cropping** - face alignment and center-cropping using facial landmarks. Landmarks can be automatically predicted or, if they are already know, can be supplied through a separate file. It is possible to specify face factor, i.e., face area relative to the cropped image, and face extraction strategy, e.g., all faces or largest face per image.
 2. **Face enhancement** - face image quality enhancement. If images are blurry or contain many small faces, quality enhancement model can be used to make the images clearer. Small faces in the image are automatically checked and enhanced if desired.
-3. **Face parsing** - face attribute parsing and cropped image grouping to sub-directories. Face images can be grouped according to some facial attributes or some combination, such as _glasses_, _earrings and neckless_, _hats_. It is also possible to generate masks for facial attributes or some combination of them, for instance, _glasses_, _nose_, _nose and eyes_.
+3. **Face parsing** - face attribute parsing and cropped image grouping to sub-directories. Face images can be grouped according to some facial attributes or some combination, such as _glasses_, _earrings and necklace_, _hats_. It is also possible to generate masks for facial attributes or some combination of them, for instance, _glasses_, _nose_, _nose and eyes_.
 
 Please see _References_ section for more details about which models are used for each feature.
 
@@ -119,19 +120,19 @@ Quality enhancement feature allows to restore blurry faces. It has one main argu
 ### Attribute Parsing
 
 Face parsing to attributes allows to group output images by category and generate attribute masks for that category. Categorized images are put to their corresponding sub-folders in the output directory.
-* `attr_groups` - dictionary specifying attribute groups, based on which the face images should be grouped. Each key represents an attribute group name, e.g., _glasses_, _earings and neckless_, _no accessories_, and each value represents attribute indices, e.g., `[6]`, `[9, 15]`, `[-6, -9, -15, -18]`, each index mapping to some attribute. Since this model labels face image pixels, if there is enough pixels with the specified values in the list, the whole face image will be put into that attribute category. For negative values, it will be checked that the labeled face image does not contain those (absolute) values. If it is None, then there will be no grouping according to attributes. Here are some group examples with 2 sample images per group:
+* `attr_groups` - dictionary specifying attribute groups, based on which the face images should be grouped. Each key represents an attribute group name, e.g., _glasses_, _earings and necklace_, _no accessories_, and each value represents attribute indices, e.g., `[6]`, `[9, 15]`, `[-6, -9, -15, -18]`, each index mapping to some attribute. Since this model labels face image pixels, if there is enough pixels with the specified values in the list, the whole face image will be put into that attribute category. For negative values, it will be checked that the labeled face image does not contain those (absolute) values. If it is None, then there will be no grouping according to attributes. Here are some group examples with 2 sample images per group:
 
-    | Glasses <br/> `[6]`           | Earrings and neckless <br/> `[9, 15]`       | Hats, no glasses <br/> `[18, -6]`     | No accessories <br/> `[-6, -9, -15, -18]` |
+    | Glasses <br/> `[6]`           | Earrings and necklace <br/> `[9, 15]`       | Hats, no glasses <br/> `[18, -6]`     | No accessories <br/> `[-6, -9, -15, -18]` |
     | :---------------------------: | :-----------------------------------------: | :-----------------------------------: | :---------------------------------------: |
-    | ![ag11](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/glasses_1.jpg) | ![ag21](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/earrings_and_neckless_1.jpg) | ![ag31](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/hats_no_glasses_1.jpg) | ![ag31](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/no_accessories_1.jpg)      |
-    | ![ag12](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/glasses_2.jpg) | ![ag21](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/earrings_and_neckless_2.jpg) | ![ag31](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/hats_no_glasses_2.jpg) | ![ag31](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/no_accessories_2.jpg)      |
+    | ![ag11](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/glasses_1.jpg) | ![ag21](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/earrings_and_necklace_1.jpg) | ![ag31](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/hats_no_glasses_1.jpg) | ![ag31](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/no_accessories_1.jpg)      |
+    | ![ag12](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/glasses_2.jpg) | ![ag21](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/earrings_and_necklace_2.jpg) | ![ag31](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/hats_no_glasses_2.jpg) | ![ag31](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/no_accessories_2.jpg)      |
 
 * `mask_groups` - Dictionary specifying mask groups, based on which the face images and their masks should be grouped. Each key represents a mask group name, e.g., _nose_, _eyes and eyebrows_, and each value represents attribute indices, e.g., `[10]`, `[2, 3, 4, 5]`, each index mapping to some attribute. Since this model labels face image pixels, a mask will be created with 255 (white) at pixels that match the specified attributes and zeros (black) elsewhere. Note that negative values would make no sense here and having them would cause an error. Images are saved to sub-directories named by the mask group and masks are saved to sub-directories under the same name, except with `_mask` suffix. If it is None, then there will be no grouping according to mask groups. Here are some group examples with 1 sample image and its mask per group (for consistency, same images as before):
 
-    | Glasses <br/> `[6]`           | Earrings and neckless <br/> `[9, 15]`       | Nose <br/> `[10]`                     | Eyes and eyebrows <br/> `[2, 3, 4, 5]` |
+    | Glasses <br/> `[6]`           | Earrings and necklace <br/> `[9, 15]`       | Nose <br/> `[10]`                     | Eyes and eyebrows <br/> `[2, 3, 4, 5]` |
     | :---------------------------: | :-----------------------------------------: | :-----------------------------------: | :------------------------------------: |
-    | ![ag11](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/glasses_1.jpg) | ![ag21](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/earrings_and_neckless_1.jpg) | ![ag31](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/hats_no_glasses_1.jpg) | ![ag31](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/no_accessories_1.jpg)   |
-    | ![ag11](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/glasses_m.jpg ) | ![ag21](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/earrings_and_neckless_m.jpg) | ![ag31](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/hats_no_glasses_m.jpg) | ![ag31](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/no_accessories_m.jpg)   |
+    | ![ag11](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/glasses_1.jpg) | ![ag21](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/earrings_and_necklace_1.jpg) | ![ag31](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/hats_no_glasses_1.jpg) | ![ag31](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/no_accessories_1.jpg)   |
+    | ![ag11](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/glasses_m.jpg ) | ![ag21](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/earrings_and_necklace_m.jpg) | ![ag31](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/hats_no_glasses_m.jpg) | ![ag31](https://raw.githubusercontent.com/mantasu/face-crop-plus/main/assets/no_accessories_m.jpg)   |
 
 > If both `attr_groups` and `mask_groups` are specified, first images are grouped according to face attributes, then images in each groups are further sub-grouped to different mask groups (along with their masks).
 
@@ -144,7 +145,7 @@ Here are the 19 possible face attributes (with `0` representing the neutral cate
 | ------------------- | ---------------- | ---------------- |
 | `1` - skin          | `7` - left ear   | `13` - lower lip |
 | `2` - left eyebrow  | `8` - right ear  | `14` - neck      |
-| `3` - right eyebrow | `9` - earrings   | `15` - neckless  |
+| `3` - right eyebrow | `9` - earrings   | `15` - necklace  |
 | `4` - left eye      | `10` - nose      | `16` - clothes   |
 | `5` - right eye     | `11` - mouth     | `17` - hair      |
 | `6` - eyeglasses    | `12` - upper lip | `18` - hat       |

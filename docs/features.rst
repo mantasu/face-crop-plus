@@ -101,22 +101,22 @@ Attribute Parsing
 
 Face parsing to attributes allows to group output images by category and generate attribute masks for that category. Categorized images are put to their corresponding sub-folders in the output directory.
 
-* ``attr_groups`` - dictionary specifying attribute groups, based on which the face images should be grouped. Each key represents an attribute group name, e.g., *glasses*, *earings and neckless*, *no accessories*, and each value represents attribute indices, e.g., ``[6]``, ``[9, 15]``, ``[-6, -9, -15, -18]``, each index mapping to some attribute. Since this model labels face image pixels, if there is enough pixels with the specified values in the list, the whole face image will be put into that attribute category. For negative values, it will be checked that the labeled face image does not contain those (absolute) values. If it is None, then there will be no grouping according to attributes. Here are some group examples with 2 sample images per group:
+* ``attr_groups`` - dictionary specifying attribute groups, based on which the face images should be grouped. Each key represents an attribute group name, e.g., *glasses*, *earings and necklace*, *no accessories*, and each value represents attribute indices, e.g., ``[6]``, ``[9, 15]``, ``[-6, -9, -15, -18]``, each index mapping to some attribute. Since this model labels face image pixels, if there is enough pixels with the specified values in the list, the whole face image will be put into that attribute category. For negative values, it will be checked that the labeled face image does not contain those (absolute) values. If it is None, then there will be no grouping according to attributes. Here are some group examples with 2 sample images per group:
 
   .. list-table::
         :header-rows: 1
         :widths: 25 25 25 25
 
         * - .. centered:: Glasses |br| ``[6]``
-          - .. centered:: Earrings and neckless |br| ``[9, 15]``
+          - .. centered:: Earrings and necklace |br| ``[9, 15]``
           - .. centered:: Hats, no glasses |br| ``[18, -6]``
           - .. centered:: No accessories |br| ``[-6, -9, -15, -18]``
         * - .. image:: ../assets/glasses_1.jpg
-          - .. image:: ../assets/earrings_and_neckless_1.jpg
+          - .. image:: ../assets/earrings_and_necklace_1.jpg
           - .. image:: ../assets/hats_no_glasses_1.jpg
           - .. image:: ../assets/no_accessories_1.jpg
         * - .. image:: ../assets/glasses_2.jpg
-          - .. image:: ../assets/earrings_and_neckless_2.jpg
+          - .. image:: ../assets/earrings_and_necklace_2.jpg
           - .. image:: ../assets/hats_no_glasses_2.jpg
           - .. image:: ../assets/no_accessories_2.jpg
 
@@ -127,15 +127,15 @@ Face parsing to attributes allows to group output images by category and generat
         :widths: 25 25 25 25
 
         * - .. centered:: Glasses |br| ``[6]``
-          - .. centered:: Earrings and neckless |br| ``[9, 15]``
+          - .. centered:: Earrings and necklace |br| ``[9, 15]``
           - .. centered:: Nose |br| ``[10]``
           - .. centered:: Eyes and Eyebrows |br| ``[2, 3, 4, 5]``
         * - .. image:: ../assets/glasses_1.jpg
-          - .. image:: ../assets/earrings_and_neckless_1.jpg
+          - .. image:: ../assets/earrings_and_necklace_1.jpg
           - .. image:: ../assets/hats_no_glasses_1.jpg
           - .. image:: ../assets/no_accessories_1.jpg
         * - .. image:: ../assets/glasses_m.jpg
-          - .. image:: ../assets/earrings_and_neckless_m.jpg
+          - .. image:: ../assets/earrings_and_necklace_m.jpg
           - .. image:: ../assets/hats_no_glasses_m.jpg
           - .. image:: ../assets/no_accessories_m.jpg
 
@@ -162,7 +162,7 @@ Here are the 19 possible face attributes (with ``0`` representing the neutral ca
       - ``14`` - neck
     * - ``3`` - right eyebrow
       - ``9`` - earrings
-      - ``15`` - neckless
+      - ``15`` - necklace
     * - ``4`` - left eye
       - ``10`` - nose
       - ``16`` - clothes

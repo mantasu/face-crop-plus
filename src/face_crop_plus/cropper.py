@@ -52,11 +52,11 @@ class Cropper():
         3. **Face parsing** - automatic face attribute parsing and 
            grouping to sub-directories according selected attributes. 
            Attributes can indicate to group faces that contain specific 
-           properties, e.g., "earrings and neckless", "glasses". They 
+           properties, e.g., "earrings and necklace", "glasses". They 
            can also indicate what properties the faces should not 
            include to form a group, e.g., "no accessories" group would 
            indicate to include faces without hats, glasses, earrings, 
-           neckless etc. It is also possible to generate masks for 
+           necklace etc. It is also possible to generate masks for 
            selected face attributes, e.g., "glasses", 
            "eyes and eyebrows". For more intuition on how grouping 
            works, see :class:`.BiSeNet` and 
